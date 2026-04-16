@@ -7,14 +7,12 @@ use std::time::Instant;
 
 use bytes::Bytes;
 
-#[allow(dead_code)]
 pub(crate) struct Store {
     data: BTreeMap<Bytes, Bytes>,
     expiry: BTreeMap<Instant, Vec<Bytes>>,
     ttl: BTreeMap<Bytes, Instant>,
 }
 
-#[allow(dead_code)]
 pub(crate) fn create_store() -> Store {
     Store {
         data: BTreeMap::new(),
@@ -24,7 +22,6 @@ pub(crate) fn create_store() -> Store {
 }
 
 impl Store {
-    #[allow(dead_code)]
     pub(crate) fn delete_expired_entries(&mut self, now: Instant) {
         while let Some(exp) = self.expiry.range(..=now).next().map(|(&k, _)| k) {
             let keys = self.expiry.remove(&exp).unwrap();
@@ -50,24 +47,20 @@ impl Store {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn read_value(&self, key: &[u8]) -> Option<Bytes> {
         self.data.get(key).cloned()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn write_value(&mut self, key: Bytes, value: Bytes) {
         self.delete_ttl(&key);
         self.data.insert(key, value);
     }
 
-    #[allow(dead_code)]
     pub(crate) fn delete_entry(&mut self, key: &[u8]) {
         self.delete_ttl(key);
         self.data.remove(key);
     }
 
-    #[allow(dead_code)]
     pub(crate) fn write_ttl(&mut self, key: Bytes, instant: Instant) {
         if !self.data.contains_key(&key) {
             return;
@@ -77,7 +70,6 @@ impl Store {
         self.expiry.entry(instant).or_default().push(key);
     }
 
-    #[allow(dead_code)]
     pub(crate) fn delete_entry_if_match(&mut self, key: &[u8], expected: &[u8]) -> bool {
         if self
             .data
@@ -92,7 +84,6 @@ impl Store {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn find_by_prefix(&self, prefix: &[u8]) -> Vec<(Bytes, Bytes)> {
         let start = Bytes::copy_from_slice(prefix);
         self.data
