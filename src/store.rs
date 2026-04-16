@@ -76,4 +76,19 @@ impl Store {
         self.ttl.insert(key.clone(), instant);
         self.expiry.entry(instant).or_default().push(key);
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn delete_entry_if_match(&mut self, key: &[u8], expected: &[u8]) -> bool {
+        if self
+            .data
+            .get(key)
+            .is_some_and(|stored| stored.as_ref() == expected)
+        {
+            self.delete_ttl(key);
+            self.data.remove(key);
+            true
+        } else {
+            false
+        }
+    }
 }
