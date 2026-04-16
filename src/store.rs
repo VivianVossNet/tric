@@ -56,7 +56,7 @@ impl Store {
         self.data.insert(key, value);
     }
 
-    pub(crate) fn delete_entry(&mut self, key: &[u8]) {
+    pub(crate) fn delete_value(&mut self, key: &[u8]) {
         self.delete_ttl(key);
         self.data.remove(key);
     }
@@ -70,7 +70,7 @@ impl Store {
         self.expiry.entry(instant).or_default().push(key);
     }
 
-    pub(crate) fn delete_entry_if_match(&mut self, key: &[u8], expected: &[u8]) -> bool {
+    pub(crate) fn delete_value_if_match(&mut self, key: &[u8], expected: &[u8]) -> bool {
         if self
             .data
             .get(key)

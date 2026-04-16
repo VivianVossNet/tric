@@ -35,16 +35,16 @@ impl Tric {
         store.write_value(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
     }
 
-    pub fn delete_entry(&self, key: &[u8]) {
+    pub fn delete_value(&self, key: &[u8]) {
         let mut store = self.inner.write().unwrap();
         store.delete_expired_entries(Instant::now());
-        store.delete_entry(key);
+        store.delete_value(key);
     }
 
-    pub fn delete_entry_if_match(&self, key: &[u8], expected: &[u8]) -> bool {
+    pub fn delete_value_if_match(&self, key: &[u8], expected: &[u8]) -> bool {
         let mut store = self.inner.write().unwrap();
         store.delete_expired_entries(Instant::now());
-        store.delete_entry_if_match(key, expected)
+        store.delete_value_if_match(key, expected)
     }
 
     pub fn write_ttl(&self, key: &[u8], duration: Duration) {
