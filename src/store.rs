@@ -91,4 +91,14 @@ impl Store {
             false
         }
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn find_by_prefix(&self, prefix: &[u8]) -> Vec<(Bytes, Bytes)> {
+        let start = Bytes::copy_from_slice(prefix);
+        self.data
+            .range(start..)
+            .take_while(|(key, _)| key.starts_with(prefix))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
 }
