@@ -3,6 +3,12 @@ name = "tric"
 version = "0.0.0"
 edition = "2021"
 license = "Apache-2.0"
+description = "Embedded Rust key-value store with TTL and prefix queries. Thread-safe, in-process, under 200 lines."
+repository = "https://github.com/VivianVossNet/tric"
+readme = "README.md"
+authors = ["Vivian Voss"]
+keywords = ["kv", "cache", "ttl", "embedded", "bytes"]
+categories = ["data-structures", "caching", "concurrency"]
 
 [lib]
 
