@@ -7,17 +7,21 @@ use std::process::{Child, Command};
 use std::time::Duration;
 
 const SOCKET_DIR: &str = "/tmp/tric-integration-test";
+const SQLITE_DIR: &str = "/tmp/tric-integration-test/sqlite-data";
 const SERVER_SOCK: &str = "/tmp/tric-integration-test/server.sock";
 const ADMIN_SOCK: &str = "/tmp/tric-integration-test/admin.sock";
 
 #[allow(clippy::zombie_processes)]
 fn create_server() -> Child {
-    let _ = std::fs::remove_dir_all(SOCKET_DIR);
+    let _ = std::fs::remove_file(SERVER_SOCK);
+    let _ = std::fs::remove_file(ADMIN_SOCK);
     std::fs::create_dir_all(SOCKET_DIR).unwrap();
+    std::fs::create_dir_all(SQLITE_DIR).unwrap();
 
     let child = Command::new("target/release/tric")
         .arg("server")
         .env("TRIC_SOCKET_DIR", SOCKET_DIR)
+        .env("TRIC_SQLITE_DIR", SQLITE_DIR)
         .spawn()
         .expect("failed to start tric server");
 
@@ -28,6 +32,14 @@ fn create_server() -> Child {
         std::thread::sleep(Duration::from_millis(100));
     }
     panic!("tric-server did not create sockets within 5 seconds");
+}
+
+fn stop_server(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(SERVER_SOCK);
+    let _ = std::fs::remove_file(ADMIN_SOCK);
+    std::thread::sleep(Duration::from_millis(200));
 }
 
 fn send_datagram(data: &[u8]) -> Vec<u8> {
@@ -201,17 +213,9 @@ fn check_response_opcode(response: &[u8], expected_opcode: u8) {
 
 #[test]
 fn check_full_server_integration() {
-    let server = create_server();
+    let _ = std::fs::remove_dir_all(SOCKET_DIR);
 
-    struct ServerGuard(Child);
-    impl Drop for ServerGuard {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-            let _ = std::fs::remove_dir_all(SOCKET_DIR);
-        }
-    }
-    let _guard = ServerGuard(server);
+    let mut server = create_server();
 
     check_ping_response();
     check_write_and_read_value();
@@ -239,8 +243,16 @@ fn check_full_server_integration() {
     check_opcode_reload();
     check_opcode_restore_and_dump();
     check_diff_import();
+    check_persistence_write_before_restart();
 
-    // ServerGuard handles cleanup via Drop
+    stop_server(&mut server);
+    let mut server = create_server();
+
+    check_persistence_read_after_restart();
+    check_persistence_ttl_gone_after_restart();
+
+    stop_server(&mut server);
+    let _ = std::fs::remove_dir_all(SOCKET_DIR);
 }
 
 fn check_ping_response() {
@@ -649,5 +661,84 @@ fn check_diff_import() {
     check_response_opcode(&response, 0x81);
 
     let response = send_datagram(&build_read_value(102, b"diff:gamma"));
+    check_response_opcode(&response, 0x80);
+}
+
+fn build_write_ttl(request_id: u32, key: &[u8], duration_ms: u64) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x05);
+    datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(key);
+    datagram.extend_from_slice(&duration_ms.to_be_bytes());
+    datagram
+}
+
+fn check_persistence_write_before_restart() {
+    let response = send_datagram(&build_write_value(200, b"persist:user", b"Alice"));
+    check_response_opcode(&response, 0x80);
+
+    let response = send_datagram(&build_write_value(201, b"persist:config", b"dark-mode"));
+    check_response_opcode(&response, 0x80);
+
+    let sql_path = format!("{SOCKET_DIR}/persist-import.sql");
+    std::fs::write(
+        &sql_path,
+        "CREATE TABLE accounts (id INT PRIMARY KEY, name VARCHAR(255));\n\
+         INSERT INTO accounts VALUES (1, 'ImportedUser');\n",
+    )
+    .unwrap();
+    let response = send_admin(&format!("import -f {sql_path} --format sqlite"));
+    assert!(
+        response.contains("tables"),
+        "pre-restart import should succeed: {response}"
+    );
+
+    let response = send_datagram(&build_write_value(202, b"volatile:session", b"token-xyz"));
+    check_response_opcode(&response, 0x80);
+    let response = send_datagram(&build_write_ttl(203, b"volatile:session", 300_000));
+    check_response_opcode(&response, 0x80);
+
+    let response = send_datagram(&build_read_value(204, b"persist:user"));
+    check_response_opcode(&response, 0x81);
+    let response = send_datagram(&build_read_value(205, b"volatile:session"));
+    check_response_opcode(&response, 0x81);
+}
+
+fn check_persistence_read_after_restart() {
+    let response = send_datagram(&build_read_value(210, b"persist:user"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let value = &response[9..9 + value_len];
+    assert_eq!(
+        value, b"Alice",
+        "persistent data must survive server restart"
+    );
+
+    let response = send_datagram(&build_read_value(211, b"persist:config"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let value = &response[9..9 + value_len];
+    assert_eq!(
+        value, b"dark-mode",
+        "persistent config must survive server restart"
+    );
+
+    let response = send_datagram(&build_read_value(212, b"accounts:1"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let value = &response[9..9 + value_len];
+    assert!(
+        String::from_utf8_lossy(value).contains("ImportedUser"),
+        "SQL-imported data must survive server restart: got {:?}",
+        String::from_utf8_lossy(value)
+    );
+}
+
+fn check_persistence_ttl_gone_after_restart() {
+    let response = send_datagram(&build_read_value(220, b"volatile:session"));
     check_response_opcode(&response, 0x80);
 }

@@ -27,7 +27,8 @@ fn main() {
 
 fn run_server() {
     use tric::core::create_core;
-    use tric::core::data_bus::{create_tric_bus, DataBus};
+    use tric::core::data_bus::DataBus;
+    use tric::core::permutive_bus::create_permutive_bus;
     use tric::modules::cli::{create_cli, CliConfig};
     use tric::modules::metrics::create_metrics;
     use tric::modules::server::{create_server, ServerConfig};
@@ -35,6 +36,8 @@ fn run_server() {
     let socket_dir =
         std::env::var("TRIC_SOCKET_DIR").unwrap_or_else(|_| "/var/run/tric".to_string());
     let udp_bind = std::env::var("TRIC_UDP_BIND").unwrap_or_else(|_| "0.0.0.0:7483".to_string());
+    let sqlite_dir =
+        std::env::var("TRIC_SQLITE_DIR").unwrap_or_else(|_| "/var/db/tric".to_string());
 
     if let Err(error) = std::fs::create_dir_all(&socket_dir) {
         eprintln!("failed to create socket directory {socket_dir}: {error}");
@@ -44,7 +47,8 @@ fn run_server() {
     let local_path = format!("{socket_dir}/server.sock");
     let admin_path = format!("{socket_dir}/admin.sock");
 
-    let data_bus: Arc<dyn DataBus> = Arc::new(create_tric_bus());
+    let data_bus: Arc<dyn DataBus> =
+        Arc::new(create_permutive_bus(std::path::Path::new(&sqlite_dir)));
     let metrics = Arc::new(create_metrics());
     let mut core = create_core(data_bus);
 

@@ -4,6 +4,8 @@
 
 pub mod data_bus;
 pub mod module;
+pub mod permutive_bus;
+pub mod sqlite_bus;
 
 use std::sync::Arc;
 use std::thread;
