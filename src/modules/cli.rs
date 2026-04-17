@@ -69,6 +69,7 @@ impl CliModule {
             "status" => self.format_status(),
             "keys" => format_keys(parts, data_bus),
             "inspect" => format_inspect(parts, data_bus),
+            "import" => format_import(parts, data_bus),
             "dump" => format_dump(parts, data_bus),
             "restore" => format_restore(parts, data_bus),
             "reload" => self.format_reload(),
@@ -235,12 +236,53 @@ fn format_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
     format!("{count} entries restored from {path}\n")
 }
 
+fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+    let flag_f = parts.next();
+    let path = parts.next();
+    let flag_format = parts.next();
+    let format = parts.next();
+    let analyse_only = parts.next() == Some("--analyse");
+
+    let Some(("-f", path)) = flag_f.zip(path) else {
+        return "usage: import -f <path> --format mysql|postgres|sqlite [--analyse]\n".to_string();
+    };
+    let Some(("--format", format)) = flag_format.zip(format) else {
+        return "usage: import -f <path> --format mysql|postgres|sqlite [--analyse]\n".to_string();
+    };
+
+    let max_file_size: u64 = 1_073_741_824;
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.len() > max_file_size => {
+            return format!("error: file exceeds 1 GB limit ({}B)\n", metadata.len());
+        }
+        Err(error) => return format!("error: cannot stat {path}: {error}\n"),
+        _ => {}
+    }
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) => return format!("error: cannot read {path}: {error}\n"),
+    };
+
+    let statements = crate::modules::import::parse_sql(&content, format);
+    let plan = crate::modules::analyser::analyse_statements(&statements);
+
+    if analyse_only {
+        return crate::modules::analyser::format_storage_plan(&plan);
+    }
+
+    let result = crate::modules::import::execute_import(&statements, &plan, data_bus);
+    format!(
+        "{} tables, {} rows, {} relationships imported. {} errors.\n",
+        result.tables, result.rows, result.relationships, result.errors
+    )
+}
+
 fn format_shutdown() -> String {
     crate::modules::logger::log_info("shutdown requested via admin socket");
     std::process::exit(0);
 }
 
 fn format_help() -> String {
-    "commands:\n  status              server status\n  keys [-p prefix]    list keys\n  inspect <key>       key metadata\n  dump -f <path>      export store to file\n  restore -f <path>   import store from file\n  reload              reload authorized_keys\n  shutdown            stop server\n  help                this message\n"
+    "commands:\n  status              server status\n  keys [-p prefix]    list keys\n  inspect <key>       key metadata\n  import -f <path> --format mysql|postgres|sqlite [--analyse]\n  dump -f <path>      export store to file\n  restore -f <path>   import store from file\n  reload              reload authorized_keys\n  shutdown            stop server\n  help                this message\n"
         .to_string()
 }
