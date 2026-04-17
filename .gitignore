@@ -1,4 +1,5 @@
 /target
+/release
 Cargo.lock
 context.tar.gz
 .DS_Store
