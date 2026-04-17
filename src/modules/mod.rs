@@ -3,6 +3,7 @@
 // Scope: Module declarations for the tric-server binary.
 
 pub mod auth;
+pub mod cli;
 pub mod codec;
 pub mod health;
 pub mod logger;

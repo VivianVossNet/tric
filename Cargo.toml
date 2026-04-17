@@ -16,6 +16,10 @@ categories = ["data-structures", "caching", "concurrency"]
 name = "tric-server"
 path = "src/main.rs"
 
+[[bin]]
+name = "tric"
+path = "src/bin/tric.rs"
+
 [dependencies]
 bytes = "1"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
