@@ -3,7 +3,7 @@
 // Scope: Transient key-value store — BTreeMap-backed storage with lazy TTL expiry.
 
 use std::collections::BTreeMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 
@@ -82,6 +82,11 @@ impl Store {
         } else {
             false
         }
+    }
+
+    pub(crate) fn read_ttl_remaining(&self, key: &[u8], now: Instant) -> Option<Duration> {
+        let expiry_instant = self.ttl.get(key)?;
+        expiry_instant.checked_duration_since(now)
     }
 
     pub(crate) fn find_by_prefix(&self, prefix: &[u8]) -> Vec<(Bytes, Bytes)> {

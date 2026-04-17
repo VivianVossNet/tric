@@ -134,6 +134,10 @@ impl SessionTable {
         let mut sessions = self.sessions.write().unwrap();
         sessions.remove(session_id);
     }
+
+    pub fn read_session_count(&self) -> usize {
+        self.sessions.read().unwrap().len()
+    }
 }
 
 fn decode_base64(input: &str) -> Option<Vec<u8>> {

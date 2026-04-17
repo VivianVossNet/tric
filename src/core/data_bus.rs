@@ -14,6 +14,7 @@ pub trait DataBus: Send + Sync {
     fn delete_value(&self, key: &[u8]);
     fn delete_value_if_match(&self, key: &[u8], expected: &[u8]) -> bool;
     fn write_ttl(&self, key: &[u8], duration: Duration);
+    fn read_ttl_remaining(&self, key: &[u8]) -> Option<Duration>;
     fn find_by_prefix(&self, prefix: &[u8]) -> Vec<(Bytes, Bytes)>;
 }
 
@@ -46,6 +47,10 @@ impl DataBus for TricBus {
 
     fn write_ttl(&self, key: &[u8], duration: Duration) {
         self.inner.write_ttl(key, duration);
+    }
+
+    fn read_ttl_remaining(&self, key: &[u8]) -> Option<Duration> {
+        self.inner.read_ttl_remaining(key)
     }
 
     fn find_by_prefix(&self, prefix: &[u8]) -> Vec<(Bytes, Bytes)> {

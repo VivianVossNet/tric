@@ -128,10 +128,16 @@ fn format_inspect(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
     };
     let key = key_str.as_bytes();
     match data_bus.read_value(key) {
-        Some(value) => format!(
-            "key     {key_str}\nsize    {}B\ntier    transient\n",
-            value.len()
-        ),
+        Some(value) => {
+            let ttl_info = match data_bus.read_ttl_remaining(key) {
+                Some(remaining) => format!("{}s", remaining.as_secs()),
+                None => "none (persistent)".to_string(),
+            };
+            format!(
+                "key     {key_str}\nsize    {}B\nttl     {ttl_info}\ntier    transient\n",
+                value.len()
+            )
+        }
         None => format!("key {key_str} not found\n"),
     }
 }
@@ -152,12 +158,16 @@ fn format_dump(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>
     for (key, value) in &pairs {
         let key_len = (key.len() as u32).to_be_bytes();
         let value_len = (value.len() as u32).to_be_bytes();
-        let ttl_placeholder = 0u64.to_be_bytes();
+        let ttl_ms = data_bus
+            .read_ttl_remaining(key)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        let ttl_bytes = ttl_ms.to_be_bytes();
         let _ = file.write_all(&key_len);
         let _ = file.write_all(key);
         let _ = file.write_all(&value_len);
         let _ = file.write_all(value);
-        let _ = file.write_all(&ttl_placeholder);
+        let _ = file.write_all(&ttl_bytes);
         count += 1;
         bytes_written += 4 + key.len() + 4 + value.len() + 8;
     }
@@ -205,7 +215,7 @@ fn format_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
         }
         let value = &data[offset..offset + value_len];
         offset += value_len;
-        let _ttl_ms = u64::from_be_bytes([
+        let ttl_ms = u64::from_be_bytes([
             data[offset],
             data[offset + 1],
             data[offset + 2],
@@ -217,6 +227,9 @@ fn format_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
         ]);
         offset += 8;
         data_bus.write_value(key, value);
+        if ttl_ms > 0 {
+            data_bus.write_ttl(key, std::time::Duration::from_millis(ttl_ms));
+        }
         count += 1;
     }
     format!("{count} entries restored from {path}\n")

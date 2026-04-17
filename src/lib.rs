@@ -56,6 +56,13 @@ impl Tric {
         store.write_ttl(Bytes::copy_from_slice(key), now + duration);
     }
 
+    pub fn read_ttl_remaining(&self, key: &[u8]) -> Option<Duration> {
+        let mut store = self.inner.write().unwrap();
+        let now = Instant::now();
+        store.delete_expired_entries(now);
+        store.read_ttl_remaining(key, now)
+    }
+
     pub fn find_by_prefix(&self, prefix: &[u8]) -> Vec<(Bytes, Bytes)> {
         let mut store = self.inner.write().unwrap();
         store.delete_expired_entries(Instant::now());

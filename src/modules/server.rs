@@ -25,10 +25,14 @@ pub struct ServerConfig {
 
 pub struct ServerModule {
     config: ServerConfig,
+    metrics: Arc<crate::modules::metrics::Metrics>,
 }
 
-pub fn create_server(config: ServerConfig) -> ServerModule {
-    ServerModule { config }
+pub fn create_server(
+    config: ServerConfig,
+    metrics: Arc<crate::modules::metrics::Metrics>,
+) -> ServerModule {
+    ServerModule { config, metrics }
 }
 
 impl Module for ServerModule {
@@ -77,8 +81,9 @@ impl Module for ServerModule {
             let socket = Arc::clone(&local_socket);
             let core_bus = context.core_bus.clone();
             let data_bus = Arc::clone(&context.data_bus);
+            let metrics = Arc::clone(&self.metrics);
             handles.push(thread::spawn(move || {
-                run_local_worker(&socket, &core_bus, &data_bus);
+                run_local_worker(&socket, &core_bus, &data_bus, &metrics);
             }));
         }
 
@@ -87,8 +92,9 @@ impl Module for ServerModule {
             let core_bus = context.core_bus.clone();
             let data_bus = Arc::clone(&context.data_bus);
             let sessions = Arc::clone(&session_table);
+            let metrics = Arc::clone(&self.metrics);
             handles.push(thread::spawn(move || {
-                run_network_worker(&socket, &core_bus, &data_bus, &sessions);
+                run_network_worker(&socket, &core_bus, &data_bus, &sessions, &metrics);
             }));
         }
 
@@ -98,7 +104,12 @@ impl Module for ServerModule {
     }
 }
 
-fn run_local_worker(socket: &UnixDatagram, core_bus: &crate::Tric, data_bus: &Arc<dyn DataBus>) {
+fn run_local_worker(
+    socket: &UnixDatagram,
+    core_bus: &crate::Tric,
+    data_bus: &Arc<dyn DataBus>,
+    metrics: &crate::modules::metrics::Metrics,
+) {
     let mut buffer = [0u8; MAX_DATAGRAM];
     loop {
         core_bus.write_ttl(b"module:server", Duration::from_secs(15));
@@ -106,9 +117,12 @@ fn run_local_worker(socket: &UnixDatagram, core_bus: &crate::Tric, data_bus: &Ar
             Ok(result) => result,
             Err(_) => continue,
         };
+        let start = std::time::Instant::now();
+        metrics.record_local_request();
         let request = match decode_local(&buffer[..length]) {
             Some(request) => request,
             None => {
+                metrics.record_error();
                 let error = encode_local(&create_error(0, ERROR_MALFORMED));
                 let _ = socket.send_to_addr(&error, &peer);
                 continue;
@@ -119,6 +133,7 @@ fn run_local_worker(socket: &UnixDatagram, core_bus: &crate::Tric, data_bus: &Ar
             let encoded = encode_local(response);
             let _ = socket.send_to_addr(&encoded, &peer);
         }
+        metrics.record_latency(start);
     }
 }
 
@@ -127,6 +142,7 @@ fn run_network_worker(
     core_bus: &crate::Tric,
     data_bus: &Arc<dyn DataBus>,
     session_table: &SessionTable,
+    metrics: &crate::modules::metrics::Metrics,
 ) {
     let mut buffer = [0u8; MAX_DATAGRAM];
     loop {
@@ -135,6 +151,9 @@ fn run_network_worker(
             Ok(result) => result,
             Err(_) => continue,
         };
+
+        let start = std::time::Instant::now();
+        metrics.record_network_request();
 
         let (request, session_id) = match decode_network(&buffer[..length], session_table) {
             Some(result) => result,
@@ -147,6 +166,7 @@ fn run_network_worker(
                 let _ = socket.send_to(&encoded, peer);
             }
         }
+        metrics.record_latency(start);
     }
 }
 
