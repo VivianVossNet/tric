@@ -141,6 +141,10 @@ fn check_full_server_integration() {
     check_admin_help();
     check_admin_dump_and_restore();
     check_sql_import();
+    check_export_tric();
+    check_export_tric_debug();
+    check_export_sql();
+    check_export_roundtrip();
 
     // ServerGuard handles cleanup via Drop
 }
@@ -252,4 +256,64 @@ fn check_sql_import() {
         response.contains("_schema:customers"),
         "schema entry should exist"
     );
+}
+
+fn check_export_tric() {
+    let export_path = format!("{SOCKET_DIR}/test-export.tric");
+    let response = send_admin(&format!("export -f {export_path}"));
+    assert!(
+        response.contains("exported"),
+        "export should confirm: {response}"
+    );
+    assert!(
+        std::path::Path::new(&export_path).exists(),
+        ".tric file should exist"
+    );
+    let file_size = std::fs::metadata(&export_path).unwrap().len();
+    assert!(file_size > 0, ".tric file should not be empty");
+}
+
+fn check_export_tric_debug() {
+    let export_path = format!("{SOCKET_DIR}/test-export-debug.tric");
+    let response = send_admin(&format!("export -f {export_path} --debug"));
+    assert!(
+        response.contains("exported"),
+        "debug export should confirm: {response}"
+    );
+    assert!(
+        response.contains("uncompressed"),
+        "debug export should say uncompressed: {response}"
+    );
+}
+
+fn check_export_sql() {
+    let export_path = format!("{SOCKET_DIR}/test-export.sql");
+    let response = send_admin(&format!("export -f {export_path} --format sqlite"));
+    assert!(
+        response.contains("exported"),
+        "SQL export should confirm: {response}"
+    );
+    let content = std::fs::read_to_string(&export_path).unwrap();
+    assert!(
+        content.contains("CREATE TABLE"),
+        "SQL export should contain CREATE TABLE"
+    );
+    assert!(
+        content.contains("INSERT INTO"),
+        "SQL export should contain INSERT INTO"
+    );
+}
+
+fn check_export_roundtrip() {
+    let export_path = format!("{SOCKET_DIR}/roundtrip.sql");
+    send_admin(&format!("export -f {export_path} --format sqlite"));
+
+    send_datagram(&build_delete_value(50, b"customers:1"));
+    send_datagram(&build_delete_value(51, b"customers:2"));
+    let response = send_datagram(&build_read_value(52, b"customers:1"));
+    check_response_opcode(&response, 0x80);
+
+    send_admin(&format!("import -f {export_path} --format sqlite"));
+    let response = send_datagram(&build_read_value(53, b"customers:1"));
+    check_response_opcode(&response, 0x81);
 }
