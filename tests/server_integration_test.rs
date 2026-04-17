@@ -15,10 +15,11 @@ fn create_server() -> Child {
     let _ = std::fs::remove_dir_all(SOCKET_DIR);
     std::fs::create_dir_all(SOCKET_DIR).unwrap();
 
-    let child = Command::new("target/release/tric-server")
+    let child = Command::new("target/release/tric")
+        .arg("server")
         .env("TRIC_SOCKET_DIR", SOCKET_DIR)
         .spawn()
-        .expect("failed to start tric-server");
+        .expect("failed to start tric server");
 
     for _ in 0..50 {
         if std::path::Path::new(SERVER_SOCK).exists() && std::path::Path::new(ADMIN_SOCK).exists() {

@@ -13,12 +13,8 @@ categories = ["data-structures", "caching", "concurrency"]
 [lib]
 
 [[bin]]
-name = "tric-server"
-path = "src/main.rs"
-
-[[bin]]
 name = "tric"
-path = "src/bin/tric.rs"
+path = "src/main.rs"
 
 [dependencies]
 bytes = "1"

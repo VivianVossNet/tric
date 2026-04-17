@@ -1,16 +1,37 @@
 // Copyright 2025 Vivian Voss. Licensed under the Apache License, Version 2.0.
 // SPDX-License-Identifier: Apache-2.0
-// Scope: tric-server entry point — creates Core, registers modules, starts supervision.
+// Scope: tric — unified binary. `tric server` starts the daemon. Everything else is CLI.
 
+use std::io::{self, BufRead, Write};
+use std::os::unix::net::UnixDatagram;
 use std::sync::Arc;
 
-use tric::core::create_core;
-use tric::core::data_bus::{create_tric_bus, DataBus};
-use tric::modules::cli::{create_cli, CliConfig};
-use tric::modules::metrics::create_metrics;
-use tric::modules::server::{create_server, ServerConfig};
-
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    if args.is_empty() {
+        print_usage();
+        std::process::exit(1);
+    }
+
+    if args[0] == "server" {
+        run_server();
+    } else if args[0] == "shell" {
+        run_shell();
+    } else {
+        let command = args.join(" ");
+        let response = send_command(&command);
+        print!("{response}");
+    }
+}
+
+fn run_server() {
+    use tric::core::create_core;
+    use tric::core::data_bus::{create_tric_bus, DataBus};
+    use tric::modules::cli::{create_cli, CliConfig};
+    use tric::modules::metrics::create_metrics;
+    use tric::modules::server::{create_server, ServerConfig};
+
     let socket_dir =
         std::env::var("TRIC_SOCKET_DIR").unwrap_or_else(|_| "/var/run/tric".to_string());
     let udp_bind = std::env::var("TRIC_UDP_BIND").unwrap_or_else(|_| "0.0.0.0:7483".to_string());
@@ -58,4 +79,78 @@ fn main() {
     ));
 
     core.run_supervision_loop();
+}
+
+fn run_shell() {
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+    loop {
+        let _ = write!(stdout, "tric> ");
+        let _ = stdout.flush();
+        let mut line = String::new();
+        match stdin.lock().read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if trimmed == "exit" || trimmed == "quit" {
+                    break;
+                }
+                let response = send_command(trimmed);
+                print!("{response}");
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+fn send_command(command: &str) -> String {
+    let socket_dir =
+        std::env::var("TRIC_SOCKET_DIR").unwrap_or_else(|_| "/var/run/tric".to_string());
+    let admin_path = format!("{socket_dir}/admin.sock");
+    let client_path = format!("/tmp/tric-cli-{}.sock", std::process::id());
+    let _ = std::fs::remove_file(&client_path);
+
+    let client = match UnixDatagram::bind(&client_path) {
+        Ok(socket) => socket,
+        Err(error) => {
+            return format!("error: failed to bind {client_path}: {error}\n");
+        }
+    };
+
+    if client.connect(&admin_path).is_err() {
+        let _ = std::fs::remove_file(&client_path);
+        return format!("error: cannot connect to {admin_path}\n");
+    }
+
+    if client.send(command.as_bytes()).is_err() {
+        let _ = std::fs::remove_file(&client_path);
+        return "error: failed to send command\n".to_string();
+    }
+
+    let mut buffer = [0u8; 65536];
+    let result = match client.recv(&mut buffer) {
+        Ok(length) => String::from_utf8_lossy(&buffer[..length]).to_string(),
+        Err(error) => format!("error: failed to receive response: {error}\n"),
+    };
+
+    let _ = std::fs::remove_file(&client_path);
+    result
+}
+
+fn print_usage() {
+    eprintln!("usage: tric <command> [args...]");
+    eprintln!("       tric server            start the daemon");
+    eprintln!("       tric status            server status");
+    eprintln!("       tric keys [-p prefix]  list keys");
+    eprintln!("       tric inspect <key>     key metadata");
+    eprintln!("       tric import -f <path> --format mysql|postgres|sqlite");
+    eprintln!("       tric export -f <path.tric> [--debug] [--format mysql|postgres|sqlite]");
+    eprintln!("       tric dump -f <path>    binary store dump");
+    eprintln!("       tric restore -f <path> binary store restore");
+    eprintln!("       tric shutdown          stop server");
+    eprintln!("       tric shell             interactive REPL");
+    eprintln!("       tric help              command list");
 }
