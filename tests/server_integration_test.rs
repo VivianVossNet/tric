@@ -98,6 +98,15 @@ fn build_find_by_prefix(request_id: u32, prefix: &[u8]) -> Vec<u8> {
     datagram
 }
 
+fn build_query(request_id: u32, sql: &[u8]) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x07);
+    datagram.extend_from_slice(&(sql.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(sql);
+    datagram
+}
+
 fn build_ping(request_id: u32) -> Vec<u8> {
     let mut datagram = Vec::new();
     datagram.extend_from_slice(&request_id.to_be_bytes());
@@ -146,6 +155,12 @@ fn check_full_server_integration() {
     check_export_tric_debug();
     check_export_sql();
     check_export_roundtrip();
+    check_query_insert_and_select();
+    check_query_update_and_delete();
+    check_query_select_all();
+    check_query_select_like_prefix();
+    check_query_wire_protocol();
+    check_query_error_handling();
 
     // ServerGuard handles cleanup via Drop
 }
@@ -317,4 +332,103 @@ fn check_export_roundtrip() {
     send_admin(&format!("import -f {export_path} --format sqlite"));
     let response = send_datagram(&build_read_value(53, b"customers:1"));
     check_response_opcode(&response, 0x81);
+}
+
+fn check_query_insert_and_select() {
+    let response = send_admin("query INSERT INTO orders VALUES (100, 'Widget', 42)");
+    assert_eq!(response.trim(), "OK", "INSERT via query should return OK");
+
+    let response = send_admin("query SELECT * FROM orders WHERE key = '100'");
+    assert!(
+        response.contains("Widget"),
+        "SELECT by key should return inserted value: {response}"
+    );
+}
+
+fn check_query_update_and_delete() {
+    send_admin("query INSERT INTO items VALUES (200, 'Original')");
+
+    let response = send_admin("query UPDATE items SET value = 'Updated' WHERE key = '200'");
+    assert_eq!(response.trim(), "OK", "UPDATE via query should return OK");
+
+    let response = send_admin("query SELECT * FROM items WHERE key = '200'");
+    assert!(
+        response.contains("Updated"),
+        "SELECT after UPDATE should return new value: {response}"
+    );
+
+    let response = send_admin("query DELETE FROM items WHERE key = '200'");
+    assert_eq!(response.trim(), "OK", "DELETE via query should return OK");
+
+    let response = send_admin("query SELECT * FROM items WHERE key = '200'");
+    assert_eq!(
+        response.trim(),
+        "OK",
+        "SELECT after DELETE should return empty OK: {response}"
+    );
+}
+
+fn check_query_select_all() {
+    send_admin("query INSERT INTO colours VALUES (1, 'red')");
+    send_admin("query INSERT INTO colours VALUES (2, 'green')");
+    send_admin("query INSERT INTO colours VALUES (3, 'blue')");
+
+    let response = send_admin("query SELECT * FROM colours");
+    assert!(
+        response.contains("colours:1"),
+        "SELECT all should list colours:1: {response}"
+    );
+    assert!(
+        response.contains("colours:3"),
+        "SELECT all should list colours:3: {response}"
+    );
+}
+
+fn check_query_select_like_prefix() {
+    send_admin("query INSERT INTO tags VALUES ('lang-rust', 'systems')");
+    send_admin("query INSERT INTO tags VALUES ('lang-go', 'gc')");
+    send_admin("query INSERT INTO tags VALUES ('db-sqlite', 'embedded')");
+
+    let response = send_admin("query SELECT * FROM tags WHERE key LIKE 'lang-%'");
+    assert!(
+        response.contains("tags:lang-rust"),
+        "LIKE prefix should match lang-rust: {response}"
+    );
+    assert!(
+        response.contains("tags:lang-go"),
+        "LIKE prefix should match lang-go: {response}"
+    );
+    assert!(
+        !response.contains("tags:db-sqlite"),
+        "LIKE prefix should not match db-sqlite: {response}"
+    );
+}
+
+fn check_query_wire_protocol() {
+    send_admin("query INSERT INTO wire VALUES (1, 'test-wire')");
+
+    let response = send_datagram(&build_query(60, b"SELECT * FROM wire WHERE key = '1'"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let value = &response[9..9 + value_len];
+    assert_eq!(
+        std::str::from_utf8(value).unwrap(),
+        "test-wire",
+        "QUERY opcode 0x07 should return correct value"
+    );
+}
+
+fn check_query_error_handling() {
+    let response = send_admin("query THIS IS NOT VALID SQL !!!");
+    assert!(
+        response.contains("error"),
+        "invalid SQL should return error: {response}"
+    );
+
+    let response = send_admin("query DROP TABLE users");
+    assert!(
+        response.contains("error"),
+        "unsupported statement should return error: {response}"
+    );
 }

@@ -70,6 +70,7 @@ impl CliModule {
             "keys" => format_keys(parts, data_bus),
             "inspect" => format_inspect(parts, data_bus),
             "import" => format_import(parts, data_bus),
+            "query" => format_query(parts, data_bus),
             "export" => format_export(parts, data_bus),
             "dump" => format_dump(parts, data_bus),
             "restore" => format_restore(parts, data_bus),
@@ -276,6 +277,96 @@ fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
         "{} tables, {} rows, {} relationships imported. {} errors.\n",
         result.tables, result.rows, result.relationships, result.errors
     )
+}
+
+fn format_query(parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+    let sql: String = parts.collect::<Vec<&str>>().join(" ");
+    if sql.is_empty() {
+        return "usage: query <SQL statement>\n".to_string();
+    }
+    if sql.len() > 4096 {
+        return "error: SQL exceeds 4096 byte limit\n".to_string();
+    }
+    let responses = crate::modules::query::parse_query(&sql, 0, data_bus);
+    let mut output = String::new();
+    for response in &responses {
+        match response.opcode {
+            0x80 => output.push_str("OK\n"),
+            0x81 => {
+                if response.payload.len() >= 4 {
+                    let value_len = u32::from_be_bytes([
+                        response.payload[0],
+                        response.payload[1],
+                        response.payload[2],
+                        response.payload[3],
+                    ]) as usize;
+                    if response.payload.len() >= 4 + value_len {
+                        let value = &response.payload[4..4 + value_len];
+                        output.push_str(&String::from_utf8_lossy(value));
+                        output.push('\n');
+                    }
+                }
+            }
+            0x90 => {
+                if response.payload.len() >= 4 {
+                    let key_start = 4;
+                    if let Some(key_data) = parse_scan_key(&response.payload[key_start..]) {
+                        output.push_str(&format!("{}  ", String::from_utf8_lossy(key_data)));
+                    }
+                    if let Some(value_data) = parse_scan_value(&response.payload[key_start..]) {
+                        output.push_str(&format!("{}B", value_data.len()));
+                    }
+                    output.push('\n');
+                }
+            }
+            0x91 => {}
+            0xA1 => {
+                let msg = String::from_utf8_lossy(&response.payload);
+                output.push_str(&format!("error: {msg}\n"));
+            }
+            _ => {}
+        }
+    }
+    if output.is_empty() {
+        "(no results)\n".to_string()
+    } else {
+        output
+    }
+}
+
+fn parse_scan_key(data: &[u8]) -> Option<&[u8]> {
+    if data.len() < 4 {
+        return None;
+    }
+    let len = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if data.len() >= 4 + len {
+        Some(&data[4..4 + len])
+    } else {
+        None
+    }
+}
+
+fn parse_scan_value(data: &[u8]) -> Option<&[u8]> {
+    if data.len() < 4 {
+        return None;
+    }
+    let key_len = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let value_offset = 4 + key_len;
+    if data.len() < value_offset + 4 {
+        return None;
+    }
+    let value_len = u32::from_be_bytes([
+        data[value_offset],
+        data[value_offset + 1],
+        data[value_offset + 2],
+        data[value_offset + 3],
+    ]) as usize;
+    let value_start = value_offset + 4;
+    if data.len() >= value_start + value_len {
+        Some(&data[value_start..value_start + value_len])
+    } else {
+        None
+    }
 }
 
 fn format_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {

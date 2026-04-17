@@ -12,5 +12,6 @@ pub mod import;
 pub mod logger;
 pub mod metrics;
 pub mod placeholder;
+pub mod query;
 pub mod router;
 pub mod server;

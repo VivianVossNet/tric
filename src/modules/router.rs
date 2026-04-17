@@ -23,6 +23,7 @@ pub fn dispatch_request(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<R
         0x04 => vec![delete_value_if_match(request, data_bus)],
         0x05 => vec![write_ttl(request, data_bus)],
         0x06 => find_by_prefix(request, data_bus),
+        0x07 => dispatch_query(request, data_bus),
         0x13 => vec![create_ok(request.request_id)],
         _ => vec![create_error(request.request_id, ERROR_INVALID_OPCODE)],
     }
@@ -132,6 +133,14 @@ fn find_by_prefix(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Respons
     });
 
     responses
+}
+
+fn dispatch_query(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Response> {
+    let Some(sql_bytes) = read_field(&request.payload, 0) else {
+        return vec![create_error(request.request_id, ERROR_MALFORMED)];
+    };
+    let sql = String::from_utf8_lossy(sql_bytes);
+    crate::modules::query::parse_query(&sql, request.request_id, data_bus)
 }
 
 fn read_field(payload: &[u8], offset: usize) -> Option<&[u8]> {
