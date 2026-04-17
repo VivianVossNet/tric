@@ -128,7 +128,7 @@ fn run_local_worker(
                 continue;
             }
         };
-        let responses = dispatch_request(&request, data_bus);
+        let responses = dispatch_request(&request, data_bus, metrics);
         for response in &responses {
             let encoded = encode_local(response);
             let _ = socket.send_to_addr(&encoded, &peer);
@@ -161,7 +161,7 @@ fn run_network_worker(
 
         metrics.record_network_request();
 
-        let responses = dispatch_request(&request, data_bus);
+        let responses = dispatch_request(&request, data_bus, metrics);
         for response in &responses {
             if let Some(encoded) = encode_network(response, &session_id, session_table) {
                 let _ = socket.send_to(&encoded, peer);

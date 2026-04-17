@@ -9,6 +9,7 @@ pub struct Request {
     pub request_id: u32,
     pub opcode: u8,
     pub payload: Vec<u8>,
+    pub is_local: bool,
 }
 
 pub struct Response {
@@ -31,6 +32,7 @@ pub fn decode_local(raw: &[u8]) -> Option<Request> {
         request_id,
         opcode,
         payload,
+        is_local: true,
     })
 }
 
@@ -71,6 +73,7 @@ pub fn decode_network(raw: &[u8], session_table: &SessionTable) -> Option<(Reque
             request_id,
             opcode,
             payload,
+            is_local: false,
         },
         session_id,
     ))

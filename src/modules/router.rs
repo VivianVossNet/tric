@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::core::data_bus::DataBus;
 use crate::modules::codec::{Request, Response};
+use crate::modules::metrics::Metrics;
 
 const OK: u8 = 0x80;
 const OK_PAYLOAD: u8 = 0x81;
@@ -15,7 +16,11 @@ const SCAN_END: u8 = 0x91;
 const ERROR_MALFORMED: u8 = 0xA1;
 const ERROR_INVALID_OPCODE: u8 = 0xA2;
 
-pub fn dispatch_request(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Response> {
+pub fn dispatch_request(
+    request: &Request,
+    data_bus: &Arc<dyn DataBus>,
+    metrics: &Metrics,
+) -> Vec<Response> {
     match request.opcode {
         0x01 => vec![read_value(request, data_bus)],
         0x02 => vec![write_value(request, data_bus)],
@@ -25,6 +30,13 @@ pub fn dispatch_request(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<R
         0x06 => find_by_prefix(request, data_bus),
         0x07 => dispatch_query(request, data_bus),
         0x13 => vec![create_ok(request.request_id)],
+        0x14 => vec![read_status(request, metrics)],
+        0x15 => vec![parse_shutdown(request)],
+        0x16 => vec![parse_reload(request)],
+        0x17 => read_keys(request, data_bus),
+        0x18 => vec![read_inspect(request, data_bus)],
+        0x19 => read_dump(request, data_bus),
+        0x1A => vec![write_restore(request, data_bus)],
         _ => vec![create_error(request.request_id, ERROR_INVALID_OPCODE)],
     }
 }
@@ -163,6 +175,155 @@ fn read_field_with_offset(payload: &[u8], offset: usize) -> Option<(&[u8], usize
         return None;
     }
     Some((&payload[field_start..field_end], field_end))
+}
+
+fn read_status(request: &Request, metrics: &Metrics) -> Response {
+    if !request.is_local {
+        return create_error(request.request_id, ERROR_INVALID_OPCODE);
+    }
+    let mut payload = Vec::with_capacity(56);
+    payload.extend_from_slice(&metrics.read_requests_total().to_be_bytes());
+    payload.extend_from_slice(&metrics.read_requests_local().to_be_bytes());
+    payload.extend_from_slice(&metrics.read_requests_network().to_be_bytes());
+    payload.extend_from_slice(&metrics.read_errors_total().to_be_bytes());
+    payload.extend_from_slice(&metrics.read_active_sessions().to_be_bytes());
+    payload.extend_from_slice(&metrics.read_latency_average_microseconds().to_be_bytes());
+    payload.extend_from_slice(&metrics.read_latency_max_microseconds().to_be_bytes());
+    Response {
+        request_id: request.request_id,
+        opcode: OK_PAYLOAD,
+        payload,
+    }
+}
+
+fn parse_shutdown(request: &Request) -> Response {
+    if !request.is_local {
+        return create_error(request.request_id, ERROR_INVALID_OPCODE);
+    }
+    crate::modules::logger::log_info("shutdown requested via binary protocol");
+    std::process::exit(0);
+}
+
+fn parse_reload(request: &Request) -> Response {
+    if !request.is_local {
+        return create_error(request.request_id, ERROR_INVALID_OPCODE);
+    }
+    crate::modules::logger::log_info("reload requested via binary protocol");
+    create_ok(request.request_id)
+}
+
+fn read_keys(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Response> {
+    let prefix = read_field(&request.payload, 0).unwrap_or(b"");
+    let pairs = data_bus.find_by_prefix(prefix);
+    let total = pairs.len().min(u16::MAX as usize) as u16;
+    let mut responses = Vec::with_capacity(pairs.len().min(u16::MAX as usize) + 1);
+
+    for (chunk_id, (key, value)) in pairs.iter().take(u16::MAX as usize).enumerate() {
+        let mut payload = Vec::with_capacity(4 + key.len() + 4 + value.len() + 4);
+        payload.extend_from_slice(&total.to_be_bytes());
+        payload.extend_from_slice(&(chunk_id as u16).to_be_bytes());
+        payload.extend_from_slice(&(key.len() as u32).to_be_bytes());
+        payload.extend_from_slice(key);
+        payload.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        payload.extend_from_slice(value);
+        responses.push(Response {
+            request_id: request.request_id,
+            opcode: SCAN_CHUNK,
+            payload,
+        });
+    }
+
+    responses.push(Response {
+        request_id: request.request_id,
+        opcode: SCAN_END,
+        payload: Vec::new(),
+    });
+
+    responses
+}
+
+fn read_inspect(request: &Request, data_bus: &Arc<dyn DataBus>) -> Response {
+    let Some(key) = read_field(&request.payload, 0) else {
+        return create_error(request.request_id, ERROR_MALFORMED);
+    };
+    match data_bus.read_value(key) {
+        Some(value) => {
+            let ttl_ms = data_bus
+                .read_ttl_remaining(key)
+                .map(|duration| duration.as_millis() as u64)
+                .unwrap_or(0);
+            let mut payload = Vec::with_capacity(4 + value.len() + 8);
+            payload.extend_from_slice(&(value.len() as u32).to_be_bytes());
+            payload.extend_from_slice(&value);
+            payload.extend_from_slice(&ttl_ms.to_be_bytes());
+            Response {
+                request_id: request.request_id,
+                opcode: OK_PAYLOAD,
+                payload,
+            }
+        }
+        None => create_ok(request.request_id),
+    }
+}
+
+fn read_dump(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Response> {
+    let pairs = data_bus.find_by_prefix(b"");
+    let total = pairs.len().min(u16::MAX as usize) as u16;
+    let mut responses = Vec::with_capacity(pairs.len().min(u16::MAX as usize) + 1);
+
+    for (chunk_id, (key, value)) in pairs.iter().take(u16::MAX as usize).enumerate() {
+        let ttl_ms = data_bus
+            .read_ttl_remaining(key)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        let mut payload = Vec::with_capacity(4 + key.len() + 4 + value.len() + 8 + 4);
+        payload.extend_from_slice(&total.to_be_bytes());
+        payload.extend_from_slice(&(chunk_id as u16).to_be_bytes());
+        payload.extend_from_slice(&(key.len() as u32).to_be_bytes());
+        payload.extend_from_slice(key);
+        payload.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        payload.extend_from_slice(value);
+        payload.extend_from_slice(&ttl_ms.to_be_bytes());
+        responses.push(Response {
+            request_id: request.request_id,
+            opcode: SCAN_CHUNK,
+            payload,
+        });
+    }
+
+    responses.push(Response {
+        request_id: request.request_id,
+        opcode: SCAN_END,
+        payload: Vec::new(),
+    });
+
+    responses
+}
+
+fn write_restore(request: &Request, data_bus: &Arc<dyn DataBus>) -> Response {
+    let Some((key, offset)) = read_field_with_offset(&request.payload, 0) else {
+        return create_error(request.request_id, ERROR_MALFORMED);
+    };
+    let Some((value, offset)) = read_field_with_offset(&request.payload, offset) else {
+        return create_error(request.request_id, ERROR_MALFORMED);
+    };
+    data_bus.write_value(key, value);
+    if request.payload.len() >= offset + 8 {
+        let ttl_ms = u64::from_be_bytes([
+            request.payload[offset],
+            request.payload[offset + 1],
+            request.payload[offset + 2],
+            request.payload[offset + 3],
+            request.payload[offset + 4],
+            request.payload[offset + 5],
+            request.payload[offset + 6],
+            request.payload[offset + 7],
+        ]);
+        if ttl_ms > 0 {
+            data_bus.write_ttl(key, Duration::from_millis(ttl_ms));
+        }
+    }
+    create_ok(request.request_id)
 }
 
 fn create_ok(request_id: u32) -> Response {

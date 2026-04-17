@@ -45,6 +45,27 @@ fn send_datagram(data: &[u8]) -> Vec<u8> {
     buffer[..length].to_vec()
 }
 
+fn send_datagram_multi(data: &[u8]) -> Vec<Vec<u8>> {
+    let client_path = format!("{SOCKET_DIR}/test-multi-{}.sock", std::process::id());
+    let _ = std::fs::remove_file(&client_path);
+    let client = UnixDatagram::bind(&client_path).unwrap();
+    client.connect(SERVER_SOCK).unwrap();
+    client.send(data).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .unwrap();
+    let mut responses = Vec::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        match client.recv(&mut buffer) {
+            Ok(length) => responses.push(buffer[..length].to_vec()),
+            Err(_) => break,
+        }
+    }
+    let _ = std::fs::remove_file(&client_path);
+    responses
+}
+
 fn send_admin(command: &str) -> String {
     let client_path = format!("{SOCKET_DIR}/test-admin-{}.sock", std::process::id());
     let _ = std::fs::remove_file(&client_path);
@@ -107,6 +128,57 @@ fn build_query(request_id: u32, sql: &[u8]) -> Vec<u8> {
     datagram
 }
 
+fn build_status(request_id: u32) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x14);
+    datagram
+}
+
+fn build_keys(request_id: u32, prefix: &[u8]) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x17);
+    datagram.extend_from_slice(&(prefix.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(prefix);
+    datagram
+}
+
+fn build_inspect(request_id: u32, key: &[u8]) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x18);
+    datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(key);
+    datagram
+}
+
+fn build_dump(request_id: u32) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x19);
+    datagram
+}
+
+fn build_restore(request_id: u32, key: &[u8], value: &[u8], ttl_ms: u64) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x1A);
+    datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(key);
+    datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(value);
+    datagram.extend_from_slice(&ttl_ms.to_be_bytes());
+    datagram
+}
+
+fn build_reload(request_id: u32) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x16);
+    datagram
+}
+
 fn build_ping(request_id: u32) -> Vec<u8> {
     let mut datagram = Vec::new();
     datagram.extend_from_slice(&request_id.to_be_bytes());
@@ -161,6 +233,11 @@ fn check_full_server_integration() {
     check_query_select_like_prefix();
     check_query_wire_protocol();
     check_query_error_handling();
+    check_opcode_status();
+    check_opcode_keys();
+    check_opcode_inspect();
+    check_opcode_reload();
+    check_opcode_restore_and_dump();
 
     // ServerGuard handles cleanup via Drop
 }
@@ -430,5 +507,88 @@ fn check_query_error_handling() {
     assert!(
         response.contains("error"),
         "unsupported statement should return error: {response}"
+    );
+}
+
+fn check_opcode_status() {
+    let response = send_datagram(&build_status(70));
+    check_response_opcode(&response, 0x81);
+    assert!(
+        response.len() >= 5 + 56,
+        "STATUS payload should be 56 bytes (7 x u64): got {} bytes",
+        response.len() - 5
+    );
+    let requests_total = u64::from_be_bytes([
+        response[5],
+        response[6],
+        response[7],
+        response[8],
+        response[9],
+        response[10],
+        response[11],
+        response[12],
+    ]);
+    assert!(
+        requests_total > 0,
+        "STATUS requests_total should be > 0 after previous tests"
+    );
+}
+
+fn check_opcode_keys() {
+    let responses = send_datagram_multi(&build_keys(71, b"user:"));
+    assert!(
+        !responses.is_empty(),
+        "KEYS should return at least one response"
+    );
+    let last = responses.last().unwrap();
+    check_response_opcode(last, 0x91);
+}
+
+fn check_opcode_inspect() {
+    let response = send_datagram(&build_inspect(72, b"user:42"));
+    check_response_opcode(&response, 0x81);
+    assert!(
+        response.len() > 5 + 4 + 8,
+        "INSPECT should return value_len + value + ttl_ms"
+    );
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    assert!(value_len > 0, "INSPECT value should not be empty");
+
+    let response = send_datagram(&build_inspect(73, b"nonexistent:key"));
+    check_response_opcode(&response, 0x80);
+}
+
+fn check_opcode_reload() {
+    let response = send_datagram(&build_reload(74));
+    check_response_opcode(&response, 0x80);
+}
+
+fn check_opcode_restore_and_dump() {
+    send_datagram(&build_restore(80, b"restore:test1", b"value-one", 0));
+    send_datagram(&build_restore(81, b"restore:test2", b"value-two", 0));
+
+    let response = send_datagram(&build_read_value(82, b"restore:test1"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let value = &response[9..9 + value_len];
+    assert_eq!(value, b"value-one", "RESTORE should write value correctly");
+
+    let responses = send_datagram_multi(&build_dump(83));
+    assert!(
+        responses.len() >= 2,
+        "DUMP should return at least one chunk + end: got {}",
+        responses.len()
+    );
+    let last = responses.last().unwrap();
+    check_response_opcode(last, 0x91);
+
+    let has_restore_key = responses.iter().any(|r| {
+        r.len() > 5 && r[4] == 0x90 && String::from_utf8_lossy(r).contains("restore:test1")
+    });
+    assert!(
+        has_restore_key,
+        "DUMP should contain the restored key restore:test1"
     );
 }
