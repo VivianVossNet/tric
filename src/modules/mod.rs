@@ -4,6 +4,9 @@
 
 pub mod auth;
 pub mod codec;
+pub mod health;
+pub mod logger;
+pub mod metrics;
 pub mod placeholder;
 pub mod router;
 pub mod server;
