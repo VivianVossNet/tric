@@ -12,8 +12,14 @@ use crate::create_tric;
 
 pub fn run_benchmark() {
     println!("TRIC+ Performance Benchmark");
-    println!("===========================\n");
+    println!("===========================");
+    println!();
+    println!("  Layer 1: In-process (library, no transport overhead)");
+    println!("  Layer 2: Server (UDS DGRAM, kernel context switch per operation)");
+    println!("  Layer 3: Redis (TCP localhost, full network stack per operation)");
+    println!();
 
+    println!("--- Layer 1: TRIC+ In-Process (library API, no transport) ---\n");
     check_transient_write();
     check_transient_read();
     check_transient_mixed();
@@ -23,10 +29,16 @@ pub fn run_benchmark() {
     check_cache_promoted_read();
     check_scan();
 
-    println!("\n--- Redis Comparison ---\n");
+    println!("\n--- Layer 2: TRIC+ Server (UDS DGRAM, per-datagram roundtrip) ---\n");
+    check_tric_server();
+
+    println!("\n--- Layer 3: Redis (TCP localhost, per-command roundtrip) ---\n");
     check_redis();
 
-    println!("\nDone.");
+    println!("\nMethodology: Each operation is a synchronous roundtrip (send + wait for");
+    println!("response). No pipelining, no batching. 128-byte values. Single client thread.");
+    println!("Layer 1 measures raw engine speed. Layers 2 and 3 measure real-world server");
+    println!("throughput including transport overhead. All three layers on the same machine.");
 }
 
 fn create_key(index: usize) -> Vec<u8> {
@@ -247,6 +259,88 @@ fn check_scan() {
         latencies.push(t.elapsed());
     }
     render_result("scan (10k entries)", count, start.elapsed(), &mut latencies);
+}
+
+fn check_tric_server() {
+    use std::os::unix::net::UnixDatagram;
+
+    let socket_dir =
+        std::env::var("TRIC_SOCKET_DIR").unwrap_or_else(|_| "/var/run/tric".to_string());
+    let server_sock = format!("{socket_dir}/server.sock");
+    let client_path = format!("/tmp/tric-bench-srv-{}.sock", std::process::id());
+    let _ = std::fs::remove_file(&client_path);
+
+    let client = match UnixDatagram::bind(&client_path) {
+        Ok(client) => client,
+        Err(_) => {
+            println!("  Cannot bind client socket. Skipping server benchmark.");
+            return;
+        }
+    };
+
+    if client.connect(&server_sock).is_err() {
+        let _ = std::fs::remove_file(&client_path);
+        println!("  TRIC+ server is not running. To include server benchmark:");
+        println!();
+        println!("    Start the server first:  tric server &");
+        println!("    Then re-run:             tric benchmark");
+        return;
+    }
+
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+
+    let value = create_value(128);
+    let count = 50_000;
+
+    let mut latencies = Vec::with_capacity(count);
+    let start = Instant::now();
+    for index in 0..count {
+        let t = Instant::now();
+        let key = create_key(index);
+        let mut datagram = Vec::with_capacity(9 + key.len() + value.len());
+        datagram.extend_from_slice(&(index as u32).to_be_bytes());
+        datagram.push(0x02);
+        datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
+        datagram.extend_from_slice(&key);
+        datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
+        datagram.extend_from_slice(&value);
+        let _ = client.send(&datagram);
+        let mut buffer = [0u8; 64];
+        let _ = client.recv(&mut buffer);
+        latencies.push(t.elapsed());
+    }
+    render_result(
+        "server write (128B, UDS DGRAM)",
+        count,
+        start.elapsed(),
+        &mut latencies,
+    );
+
+    let mut latencies = Vec::with_capacity(count);
+    let start = Instant::now();
+    for index in 0..count {
+        let t = Instant::now();
+        let key = create_key(index);
+        let mut datagram = Vec::with_capacity(9 + key.len());
+        datagram.extend_from_slice(&(index as u32).to_be_bytes());
+        datagram.push(0x01);
+        datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
+        datagram.extend_from_slice(&key);
+        let _ = client.send(&datagram);
+        let mut buffer = [0u8; 256];
+        let _ = client.recv(&mut buffer);
+        latencies.push(t.elapsed());
+    }
+    render_result(
+        "server read (128B, UDS DGRAM)",
+        count,
+        start.elapsed(),
+        &mut latencies,
+    );
+
+    let _ = std::fs::remove_file(&client_path);
 }
 
 fn check_redis() {
