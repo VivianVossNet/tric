@@ -54,6 +54,7 @@ The `request_id` (u32, big-endian) correlates requests with responses. The clien
 | `0x05` | write_ttl | `[key_len][key][duration_ms u64 BE]` | `0x80` |
 | `0x06` | find_by_prefix | `[prefix_len][prefix]` | Stream of `0x90` chunks + `0x91` end. |
 | `0x07` | query | `[sql_len][sql]` | Varies by SQL statement. See [SQL Interface](06-sql-interface.md). |
+| `0x08` | write_value_with_ttl | `[key_len][key][value_len][value][duration_ms u64 BE]` | `0x80` |
 
 ### Control and admin (client → server)
 
@@ -86,6 +87,18 @@ The `request_id` (u32, big-endian) correlates requests with responses. The clien
 | `0xA6` | Error: authentication failed |
 | `0xA7` | Error: auth not configured |
 | `0xB0` | Auth challenge: `[nonce 32B][x25519_server_ephemeral 32B]` |
+
+## Write paths at a glance
+
+TRIC+ exposes three distinct write opcodes. Pick by lifetime, not by habit.
+
+| Opcode | Semantics | Storage tier | Use for |
+|--------|-----------|--------------|---------|
+| `0x02` write_value | Write without TTL | Persistent (SQLite) | Long-lived keys, imported tables, configuration |
+| `0x05` write_ttl | Attach TTL to an existing key | Transient (BTreeMap) — promotes persistent if needed | Adding expiry to a pre-existing value |
+| `0x08` write_value_with_ttl | Atomic write + TTL | Transient (BTreeMap) | Sessions, caches, any short-lived entry — the `SET k v EX t` equivalent |
+
+`0x08` exists because the combination `0x02 + 0x05` costs two round-trips plus an fsync cycle for what is semantically one operation.
 
 ## Worked example
 

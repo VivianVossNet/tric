@@ -56,6 +56,17 @@ impl Tric {
         store.write_ttl(Bytes::copy_from_slice(key), now + duration);
     }
 
+    pub fn write_value_with_ttl(&self, key: &[u8], value: &[u8], duration: Duration) {
+        let mut store = self.inner.write().unwrap();
+        let now = Instant::now();
+        store.delete_expired_entries(now);
+        store.write_value_with_ttl(
+            Bytes::copy_from_slice(key),
+            Bytes::copy_from_slice(value),
+            now + duration,
+        );
+    }
+
     pub fn read_ttl_remaining(&self, key: &[u8]) -> Option<Duration> {
         let mut store = self.inner.write().unwrap();
         let now = Instant::now();

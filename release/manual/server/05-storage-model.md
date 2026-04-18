@@ -19,14 +19,19 @@ There is no configuration, no annotation, no tier selector. The developer sets a
 
 ### Write paths
 
-```
-write_value("session:abc", token)
-write_ttl("session:abc", 3600s)
-→ BTreeMap (transient, gone after 1 hour)
+TRIC+ offers three write paths. Each corresponds to one wire opcode (see [Wire Protocol](04-wire-protocol.md)).
 
-write_value("user:42", "alice")
-→ SQLite (persistent, survives restart)
 ```
+write_value("user:42", "alice")          → SQLite (persistent, survives restart)  [opcode 0x02]
+
+write_value("cached:row", bytes)         → SQLite first,
+write_ttl("cached:row", 300s)            → promoted to BTreeMap with 300s TTL     [opcode 0x02 then 0x05]
+
+write_value_with_ttl("session:abc", token, 3600s)
+                                         → direct to BTreeMap, 1h TTL             [opcode 0x08]
+```
+
+The third path is the `SET k v EX t` primitive — one operation, one round-trip, no SQLite involvement. Use it for sessions, caches, and any value whose lifetime is known at write time.
 
 ### Promotion on write_ttl
 
@@ -38,6 +43,18 @@ write_ttl("config:theme", 300s)         → moves to BTreeMap (300s cache)
 ```
 
 After the TTL expires, the data is gone from BTreeMap. It is also gone from SQLite because the move deleted it. If you want temporary caching of persistent data, read it — cache-promotion handles that automatically.
+
+### Supersession by write_value_with_ttl
+
+`write_value_with_ttl` installs the key directly in BTreeMap with the given TTL. If a persistent entry for the same key already exists in SQLite, it is deleted — the new transient entry supersedes it. After the TTL expires, the key is gone from both tiers.
+
+```
+write_value("user:42", "alice")                         → SQLite
+write_value_with_ttl("user:42", "alice-temp", 60s)      → BTreeMap (60s), SQLite row deleted
+(after 60s)                                             → key gone everywhere
+```
+
+This is consistent with the routing rule: TTL presence always means transient.
 
 ## Cache-promotion
 

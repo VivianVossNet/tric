@@ -70,6 +70,13 @@ impl Store {
         self.expiry.entry(instant).or_default().push(key);
     }
 
+    pub(crate) fn write_value_with_ttl(&mut self, key: Bytes, value: Bytes, instant: Instant) {
+        self.delete_ttl(&key);
+        self.data.insert(key.clone(), value);
+        self.ttl.insert(key.clone(), instant);
+        self.expiry.entry(instant).or_default().push(key);
+    }
+
     pub(crate) fn delete_value_if_match(&mut self, key: &[u8], expected: &[u8]) -> bool {
         if self
             .data

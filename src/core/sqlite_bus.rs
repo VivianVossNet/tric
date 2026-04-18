@@ -229,6 +229,10 @@ impl DataBus for SqliteBus {
 
     fn write_ttl(&self, _key: &[u8], _duration: Duration) {}
 
+    fn write_value_with_ttl(&self, key: &[u8], value: &[u8], _duration: Duration) {
+        self.write_value(key, value);
+    }
+
     fn read_ttl_remaining(&self, _key: &[u8]) -> Option<Duration> {
         None
     }
