@@ -22,8 +22,10 @@ fn main() {
         run_slots();
     } else if args[0] == "clone" {
         run_clone(&args);
-    } else if args[0] == "benchmark" || args[0] == "-b" || args[0] == "--benchmark" {
+    } else if args[0] == "benchmark" || args[0] == "-b" {
         run_benchmark();
+    } else if args[0] == "-h" {
+        print_usage();
     } else {
         let command = args.join(" ");
         let response = send_command(&command);
@@ -214,18 +216,20 @@ fn run_clone(args: &[String]) {
 
 fn print_usage() {
     eprintln!("usage: tric <command> [args...]");
-    eprintln!("       tric server            start the daemon");
-    eprintln!("       tric status            server status");
-    eprintln!("       tric keys [-p prefix]  list keys");
-    eprintln!("       tric inspect <key>     key metadata");
-    eprintln!("       tric import -f <path> --format mysql|postgres|sqlite");
-    eprintln!("       tric export -f <path.tric> [--debug] [--format mysql|postgres|sqlite]");
-    eprintln!("       tric dump -f <path>    binary store dump");
-    eprintln!("       tric restore -f <path> binary store restore");
-    eprintln!("       tric slots             list instance slots");
-    eprintln!("       tric clone <slot>      clone current slot");
-    eprintln!("       tric benchmark         performance benchmark (or -b / --benchmark)");
-    eprintln!("       tric shutdown          stop server");
-    eprintln!("       tric shell             interactive REPL");
-    eprintln!("       tric help              command list");
+    eprintln!("       tric server                          start daemon");
+    eprintln!("       tric status                          server status");
+    eprintln!("       tric keys [-p prefix]                list keys");
+    eprintln!("       tric inspect <key>                   key metadata");
+    eprintln!("       tric query <SQL>                     SQL query");
+    eprintln!("       tric import -f <path> -F <dialect> [-a]");
+    eprintln!("       tric import -D <old.tric> <new.tric>");
+    eprintln!("       tric export -f <path> [-d] [-F <dialect>]");
+    eprintln!("       tric dump -f <path>                  binary store dump");
+    eprintln!("       tric restore -f <path>               binary store restore");
+    eprintln!("       tric slots                           list instance slots");
+    eprintln!("       tric clone <slot>                    clone current slot");
+    eprintln!("       tric -b                              performance benchmark");
+    eprintln!("       tric shutdown                        stop server");
+    eprintln!("       tric shell                           interactive REPL");
+    eprintln!("       tric -h                              help");
 }

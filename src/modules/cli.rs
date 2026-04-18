@@ -241,11 +241,11 @@ fn format_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
 fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let flag_f = parts.next();
 
-    if flag_f == Some("--diff") {
+    if flag_f == Some("-D") || flag_f == Some("--diff") {
         let old_path = parts.next();
         let new_path = parts.next();
         let Some((old_path, new_path)) = old_path.zip(new_path) else {
-            return "usage: import --diff <old.tric> <new.tric>\n".to_string();
+            return "usage: import -D <old.tric> <new.tric>\n".to_string();
         };
         return format_diff_import(old_path, new_path, data_bus);
     }
@@ -253,13 +253,15 @@ fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
     let path = parts.next();
     let flag_format = parts.next();
     let format = parts.next();
-    let analyse_only = parts.next() == Some("--analyse");
+    let analyse_only = parts.next() == Some("-a") || parts.next() == Some("--analyse");
 
     let Some(("-f", path)) = flag_f.zip(path) else {
-        return "usage: import -f <path> --format mysql|postgres|sqlite [--analyse]\n  import --diff <old.tric> <new.tric>\n".to_string();
+        return "usage: import -f <path> -F mysql|postgres|sqlite [-a]\n       import -D <old.tric> <new.tric>\n"
+            .to_string();
     };
-    let Some(("--format", format)) = flag_format.zip(format) else {
-        return "usage: import -f <path> --format mysql|postgres|sqlite [--analyse]\n  import --diff <old.tric> <new.tric>\n".to_string();
+    let Some(("-F" | "--format", format)) = flag_format.zip(format) else {
+        return "usage: import -f <path> -F mysql|postgres|sqlite [-a]\n       import -D <old.tric> <new.tric>\n"
+            .to_string();
     };
 
     let max_file_size: u64 = 1_073_741_824;
@@ -404,8 +406,7 @@ fn format_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
     let flag_f = parts.next();
     let path = parts.next();
     let Some(("-f", path)) = flag_f.zip(path) else {
-        return "usage: export -f <path.tric> [--debug] [--format mysql|postgres|sqlite]\n"
-            .to_string();
+        return "usage: export -f <path.tric> [-d] [-F mysql|postgres|sqlite]\n".to_string();
     };
 
     let mut debug = false;
@@ -413,8 +414,8 @@ fn format_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
 
     while let Some(arg) = parts.next() {
         match arg {
-            "--debug" => debug = true,
-            "--format" => sql_format = parts.next(),
+            "-d" | "--debug" => debug = true,
+            "-F" | "--format" => sql_format = parts.next(),
             _ => {}
         }
     }
@@ -441,6 +442,5 @@ fn format_shutdown() -> String {
 }
 
 fn format_help() -> String {
-    "commands:\n  status              server status\n  keys [-p prefix]    list keys\n  inspect <key>       key metadata\n  import -f <path> --format mysql|postgres|sqlite [--analyse]\n  import --diff <old.tric> <new.tric>\n  export -f <path.tric> [--debug] [--format mysql|postgres|sqlite]\n  dump -f <path>      binary store dump\n  restore -f <path>   binary store restore\n  reload              reload authorized_keys\n  shutdown            stop server\n  help                this message\n"
-        .to_string()
+    "commands:\n  status                                server status\n  keys [-p prefix]                      list keys\n  inspect <key>                         key metadata\n  query <SQL>                           SQL query\n  import -f <path> -F mysql|postgres|sqlite [-a]\n  import -D <old.tric> <new.tric>       diff-import\n  export -f <path.tric> [-d] [-F mysql|postgres|sqlite]\n  dump -f <path>                        binary store dump\n  restore -f <path>                     binary store restore\n  reload                                reload authorized_keys\n  shutdown                              stop server\n  help                                  this message\n".to_string()
 }
