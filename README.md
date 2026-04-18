@@ -2,6 +2,27 @@
 
 **Permutive Database Engine** — data permutes between transient memory and persistent storage based on lifetime, not configuration.
 
+![C](https://img.shields.io/badge/C-FFI_base-555555?style=flat-square&logo=c)
+![C++](https://img.shields.io/badge/C++-planned-555555?style=flat-square&logo=cplusplus)
+![Rust](https://img.shields.io/badge/Rust-native-dea584?style=flat-square&logo=rust)
+![Swift](https://img.shields.io/badge/Swift-planned-555555?style=flat-square&logo=swift)
+![Go](https://img.shields.io/badge/Go-planned-555555?style=flat-square&logo=go)
+![PHP](https://img.shields.io/badge/PHP-planned-555555?style=flat-square&logo=php)
+![Python](https://img.shields.io/badge/Python-planned-555555?style=flat-square&logo=python)
+![Ruby](https://img.shields.io/badge/Ruby-planned-555555?style=flat-square&logo=ruby)
+![Java](https://img.shields.io/badge/Java-planned-555555?style=flat-square&logo=openjdk)
+![Kotlin](https://img.shields.io/badge/Kotlin-planned-555555?style=flat-square&logo=kotlin)
+![C#](https://img.shields.io/badge/C%23-planned-555555?style=flat-square&logo=dotnet)
+![JavaScript](https://img.shields.io/badge/JavaScript-planned-555555?style=flat-square&logo=javascript)
+![TypeScript](https://img.shields.io/badge/TypeScript-planned-555555?style=flat-square&logo=typescript)
+![Perl](https://img.shields.io/badge/Perl-planned-555555?style=flat-square&logo=perl)
+![Lua](https://img.shields.io/badge/Lua-planned-555555?style=flat-square&logo=lua)
+![Elixir](https://img.shields.io/badge/Elixir-planned-555555?style=flat-square&logo=elixir)
+![Dart](https://img.shields.io/badge/Dart-planned-555555?style=flat-square&logo=dart)
+![Nim](https://img.shields.io/badge/Nim-planned-555555?style=flat-square&logo=nim)
+![Zig](https://img.shields.io/badge/Zig-planned-555555?style=flat-square&logo=zig)
+![Tcl](https://img.shields.io/badge/Tcl-planned-555555?style=flat-square)
+
 Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it lives in SQLite. The API doesn't change. The developer thinks in lifetimes, not systems.
 
 ## What it does
@@ -14,43 +35,49 @@ Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it live
 - **SQL interface:** `tric query "SELECT * FROM users WHERE key = '42'"`
 - **Import/Export:** SQL dumps (MySQL, PostgreSQL, SQLite), `.tric` Brotli-compressed archives, diff-import
 - **Instance management:** multiple projects with slot-based cloning under `/var/db/tric/`
+- **20 language bridges** planned (C FFI base, then native socket clients for each language)
+- **8 CMS/shop integrations** planned (WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco)
 
 ## Performance
 
-Measured on two systems. Redis running on the same machine for comparison. All values are single-threaded, 128-byte payloads.
+Three benchmark layers ensure a fair comparison. Layer 2 (server vs server) is the apples-to-apples metric.
 
 ### macOS (Apple Silicon)
 
-| Workload | TRIC+ | Redis (TCP) | Factor |
-|----------|------:|------------:|-------:|
-| Transient write | 2,600,000 ops/s | 5,000 ops/s | 500x |
-| Transient read | 4,100,000 ops/s | 9,000 ops/s | 455x |
-| Cache-promoted read | 4,100,000 ops/s | — | — |
-| SQLite write (WAL) | 19,000 ops/s | — | — |
+| Layer | Workload | ops/s | vs Redis |
+|-------|----------|------:|---------:|
+| 1: In-process | Transient write 128B | 2,900,000 | — |
+| 1: In-process | Transient read 128B | 4,700,000 | — |
+| 1: In-process | Cache-promoted read | 4,700,000 | — |
+| **2: Server (UDS)** | **Write 128B** | **21,000** | **2.4x** |
+| **2: Server (UDS)** | **Read 128B** | **38,000** | **4.4x** |
+| 3: Redis (TCP) | Write 128B | 8,700 | baseline |
+| 3: Redis (TCP) | Read 128B | 8,700 | baseline |
 
 ### FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)
 
-| Workload | TRIC+ | Redis (TCP) | Factor |
-|----------|------:|------------:|-------:|
-| Transient write | 1,600,000 ops/s | 73,000 ops/s | 21x |
-| Transient read | 1,800,000 ops/s | 95,000 ops/s | 19x |
-| Cache-promoted read | 2,400,000 ops/s | — | — |
-| SQLite write (WAL/ZFS) | 15,000 ops/s | — | — |
-| Concurrent write (4 threads) | 685,000 ops/s | — | — |
+| Layer | Workload | ops/s | vs Redis |
+|-------|----------|------:|---------:|
+| 1: In-process | Transient write 128B | 1,600,000 | — |
+| 1: In-process | Transient read 128B | 1,800,000 | — |
+| 1: In-process | Cache-promoted read | 2,400,000 | — |
+| 3: Redis (TCP) | Write 128B | 73,000 | baseline |
+| 3: Redis (TCP) | Read 128B | 95,000 | baseline |
 
-TRIC+ transient operations run in-process — no network hop, no serialisation, no context switch. Redis requires TCP even on localhost. The difference is architectural, not optimisation.
+**Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures real-world server throughput (UDS DGRAM roundtrip). **Layer 3** measures Redis (TCP localhost roundtrip). All single-threaded, synchronous, no pipelining, no batching. Same machine, same payloads, same methodology.
 
 ### Reproduce
 
 ```bash
-# TRIC+ benchmarks (no server required)
-cargo test --release --test benchmark_test -- --ignored --nocapture
+# Built-in benchmark (recommended)
+tric -b
 
 # With Redis comparison (Redis must be running)
-REDIS_URL="redis://127.0.0.1/" cargo test --release --test benchmark_test -- --ignored --nocapture
+REDIS_URL="redis://127.0.0.1/" tric -b
 
-# With Redis auth
-REDIS_URL="redis://:password@host/" cargo test --release --test benchmark_test -- --ignored --nocapture
+# With TRIC+ server comparison (server must be running)
+tric server &
+tric -b
 ```
 
 ## Installation
@@ -77,11 +104,11 @@ use std::time::Duration;
 
 let tric = create_tric();
 
-// Persistent (no TTL → SQLite when used via server)
+// Persistent (no TTL = SQLite when used via server)
 tric.write_value(b"user:42", b"alice");
 assert_eq!(tric.read_value(b"user:42"), Some(Bytes::from_static(b"alice")));
 
-// Transient (TTL → BTreeMap, gone after expiry)
+// Transient (TTL = BTreeMap, gone after expiry)
 tric.write_value(b"session:abc", b"token");
 tric.write_ttl(b"session:abc", Duration::from_secs(3600));
 
@@ -105,22 +132,38 @@ tric.delete_value_if_match(b"job:1", b"pending");
 
 ## Server CLI
 
-```bash
-tric server                          # start daemon
-tric status                          # server metrics
-tric keys [-p prefix]                # list keys
-tric inspect <key>                   # key metadata + TTL
-tric query <SQL>                     # SQL subset (SELECT/INSERT/UPDATE/DELETE)
-tric import -f <path> --format mysql|postgres|sqlite [--analyse]
-tric import --diff <old.tric> <new.tric>
-tric export -f <path.tric> [--debug] [--format mysql|postgres|sqlite]
-tric dump -f <path>                  # binary store dump
-tric restore -f <path>               # binary store restore
-tric slots                           # list instance slots
-tric clone <slot>                    # clone current slot
-tric shutdown                        # stop server
-tric shell                           # interactive REPL
+FreeBSD-style short flags. No GNU long options.
+
 ```
+usage: tric <command> [args...]
+       tric server                          start daemon
+       tric status                          server status
+       tric keys [-p prefix]               list keys
+       tric inspect <key>                   key metadata
+       tric query <SQL>                     SQL query
+       tric import -f <path> -F <dialect> [-a]
+       tric import -D <old.tric> <new.tric> diff-import
+       tric export -f <path> [-d] [-F <dialect>]
+       tric dump -f <path>                  binary store dump
+       tric restore -f <path>               binary store restore
+       tric slots                           list instance slots
+       tric clone <slot>                    clone current slot
+       tric -b                              performance benchmark
+       tric shutdown                        stop server
+       tric shell                           interactive REPL
+       tric -h                              help
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-f <path>` | File path |
+| `-F <dialect>` | SQL dialect (`mysql`, `postgres`, `sqlite`) |
+| `-p <prefix>` | Key prefix filter |
+| `-D <old> <new>` | Diff-import between two `.tric` snapshots |
+| `-d` | Debug mode (uncompressed export) |
+| `-a` | Analyse only (dry-run import) |
+| `-b` | Run performance benchmark |
+| `-h` | Help |
 
 ### Environment variables
 
@@ -131,6 +174,7 @@ tric shell                           # interactive REPL
 | `TRIC_BASE_DIR` | `/var/db/tric` | SQLite storage base directory |
 | `TRIC_INSTANCE` | `default` | Instance name |
 | `TRIC_SLOT` | `0` | Active slot (`_0` = primary, `_1`+ = clones) |
+| `REDIS_URL` | `redis://127.0.0.1/` | Redis URL for benchmark comparison |
 
 ### Instance layout
 
@@ -159,6 +203,21 @@ Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram 
 | `0xA0`–`0xA7` | Error responses |
 | `0xB0` | Auth handshake |
 
+## Language bridges (planned)
+
+20 languages in four waves. Each bridge undergoes the same quality gate as the core engine.
+
+| Wave | Languages | Mechanism |
+|------|-----------|-----------|
+| 1 | **C** | Shared library (.so/.dylib), FFI base |
+| 2 | C++, Swift, Nim, Lua, Tcl, Zig | C FFI consumers |
+| 3 | PHP, Java, Kotlin, Python, Ruby, C#/.NET, Go | Native socket |
+| 4 | JavaScript, TypeScript, Perl, Elixir, Dart, Rust | Native socket |
+
+### CMS/Shop integrations (planned)
+
+WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco — each built on the corresponding Wave 3 bridge.
+
 ## Design
 
 **BTreeMap, not HashMap.** Range queries walk contiguous entries. TTL management iterates from oldest expiry. Neither works on a HashMap.
@@ -169,9 +228,11 @@ Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram 
 
 **Scoped SQLite.** Each namespace (key prefix before `:`) gets its own `.db` file. No cross-table locks. Parallel I/O. WAL mode with `NORMAL` synchronous.
 
+**FreeBSD-first CLI.** Single-letter flags, terse output, `usage:` format. No GNU long options in the interface. Defaults follow FreeBSD filesystem conventions (`/var/db/`, `/var/run/`).
+
 ## Size
 
-~3,200 lines of Rust across 19 source files. Single binary ~5 MB (SQLite bundled). 34 tests including server integration with persistence roundtrip.
+~3,500 lines of Rust across 20 source files. Single binary ~5 MB (SQLite bundled). 34 tests including server integration with persistence roundtrip. 9 benchmark tests.
 
 ## Licence
 
