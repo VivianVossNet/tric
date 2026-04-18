@@ -425,17 +425,19 @@ fn check_benchmark_tric_server_write() {
         .unwrap();
 
     let value = create_value(128);
+    let duration_ms: u64 = 60_000;
     let count = 50_000;
 
     let result = run_benchmark("tric+ server write (128B, UDS)", count, |index| {
         let key = create_key(index);
-        let mut datagram = Vec::with_capacity(9 + key.len() + value.len());
+        let mut datagram = Vec::with_capacity(17 + key.len() + value.len());
         datagram.extend_from_slice(&(index as u32).to_be_bytes());
-        datagram.push(0x02);
+        datagram.push(0x08);
         datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
         datagram.extend_from_slice(&key);
         datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
         datagram.extend_from_slice(&value);
+        datagram.extend_from_slice(&duration_ms.to_be_bytes());
         let _ = client.send(&datagram);
         let mut buffer = [0u8; 64];
         let _ = client.recv(&mut buffer);
@@ -470,17 +472,19 @@ fn check_benchmark_tric_server_read() {
         .unwrap();
 
     let value = create_value(128);
+    let duration_ms: u64 = 60_000;
     let count = 50_000;
 
     for index in 0..count {
         let key = create_key(index);
-        let mut datagram = Vec::with_capacity(9 + key.len() + value.len());
+        let mut datagram = Vec::with_capacity(17 + key.len() + value.len());
         datagram.extend_from_slice(&(index as u32).to_be_bytes());
-        datagram.push(0x02);
+        datagram.push(0x08);
         datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
         datagram.extend_from_slice(&key);
         datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
         datagram.extend_from_slice(&value);
+        datagram.extend_from_slice(&duration_ms.to_be_bytes());
         let _ = client.send(&datagram);
         let mut buffer = [0u8; 64];
         let _ = client.recv(&mut buffer);

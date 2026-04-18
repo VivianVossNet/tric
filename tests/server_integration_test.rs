@@ -242,6 +242,7 @@ fn check_full_server_integration() {
     check_opcode_inspect();
     check_opcode_reload();
     check_opcode_restore_and_dump();
+    check_opcode_write_value_with_ttl();
     check_diff_import();
     check_persistence_write_before_restart();
 
@@ -672,6 +673,67 @@ fn build_write_ttl(request_id: u32, key: &[u8], duration_ms: u64) -> Vec<u8> {
     datagram.extend_from_slice(key);
     datagram.extend_from_slice(&duration_ms.to_be_bytes());
     datagram
+}
+
+fn build_write_value_with_ttl(
+    request_id: u32,
+    key: &[u8],
+    value: &[u8],
+    duration_ms: u64,
+) -> Vec<u8> {
+    let mut datagram = Vec::new();
+    datagram.extend_from_slice(&request_id.to_be_bytes());
+    datagram.push(0x08);
+    datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(key);
+    datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
+    datagram.extend_from_slice(value);
+    datagram.extend_from_slice(&duration_ms.to_be_bytes());
+    datagram
+}
+
+fn check_opcode_write_value_with_ttl() {
+    let response = send_datagram(&build_write_value_with_ttl(
+        85,
+        b"cache:session",
+        b"token-abc",
+        60_000,
+    ));
+    check_response_opcode(&response, 0x80);
+
+    let response = send_datagram(&build_read_value(86, b"cache:session"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let value = &response[9..9 + value_len];
+    assert_eq!(
+        value, b"token-abc",
+        "0x08 should write a value readable via 0x01"
+    );
+
+    let response = send_datagram(&build_inspect(87, b"cache:session"));
+    check_response_opcode(&response, 0x81);
+    let value_len =
+        u32::from_be_bytes([response[5], response[6], response[7], response[8]]) as usize;
+    let ttl_offset = 9 + value_len;
+    let ttl_ms = u64::from_be_bytes([
+        response[ttl_offset],
+        response[ttl_offset + 1],
+        response[ttl_offset + 2],
+        response[ttl_offset + 3],
+        response[ttl_offset + 4],
+        response[ttl_offset + 5],
+        response[ttl_offset + 6],
+        response[ttl_offset + 7],
+    ]);
+    assert!(
+        ttl_ms > 0,
+        "0x08 should install a TTL; INSPECT returned 0 ms"
+    );
+    assert!(
+        ttl_ms <= 60_000,
+        "TTL should be <= the requested 60_000 ms, got {ttl_ms}"
+    );
 }
 
 fn check_persistence_write_before_restart() {

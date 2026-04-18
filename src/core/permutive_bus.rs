@@ -102,6 +102,11 @@ impl DataBus for PermutiveBus {
         self.transient.write_ttl(key, duration);
     }
 
+    fn write_value_with_ttl(&self, key: &[u8], value: &[u8], duration: Duration) {
+        self.persistent.delete_value(key);
+        self.transient.write_value_with_ttl(key, value, duration);
+    }
+
     fn read_ttl_remaining(&self, key: &[u8]) -> Option<Duration> {
         self.transient.read_ttl_remaining(key)
     }
