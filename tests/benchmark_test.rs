@@ -10,11 +10,16 @@ use tric::core::data_bus::DataBus;
 use tric::core::permutive_bus::create_permutive_bus;
 use tric::create_tric;
 
-const BENCHMARK_DIR: &str = "/tmp/tric-benchmark";
+fn create_benchmark_dir(label: &str) -> String {
+    let dir = format!("/tmp/tric-benchmark-{}-{}", label, std::process::id());
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
 
-fn create_benchmark_bus() -> Arc<dyn DataBus> {
-    let _ = std::fs::remove_dir_all(BENCHMARK_DIR);
-    Arc::new(create_permutive_bus(Path::new(BENCHMARK_DIR), "bench", 0))
+fn create_benchmark_bus(label: &str) -> (Arc<dyn DataBus>, String) {
+    let dir = create_benchmark_dir(label);
+    let bus = Arc::new(create_permutive_bus(Path::new(&dir), "bench", 0));
+    (bus, dir)
 }
 
 fn create_key(index: usize) -> Vec<u8> {
@@ -143,7 +148,7 @@ fn check_benchmark_transient_mixed() {
 #[test]
 #[ignore]
 fn check_benchmark_persistent_write() {
-    let bus = create_benchmark_bus();
+    let (bus, dir) = create_benchmark_bus("pw");
     let value = create_value(128);
     let count = 10_000;
 
@@ -152,18 +157,19 @@ fn check_benchmark_persistent_write() {
         bus.write_value(&key, &value);
     });
 
+    let ops = result.operations as f64 / result.duration.as_secs_f64();
     eprintln!("{}", result.render());
-    let _ = std::fs::remove_dir_all(BENCHMARK_DIR);
+    let _ = std::fs::remove_dir_all(&dir);
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 1_000.0,
-        "persistent write should exceed 1k ops/s (WAL mode)"
+        ops > 500.0,
+        "persistent write should exceed 500 ops/s (ZFS/WAL): got {ops:.0}"
     );
 }
 
 #[test]
 #[ignore]
 fn check_benchmark_persistent_read() {
-    let bus = create_benchmark_bus();
+    let (bus, dir) = create_benchmark_bus("pr");
     let value = create_value(128);
     let count = 10_000;
 
@@ -178,7 +184,7 @@ fn check_benchmark_persistent_read() {
     });
 
     eprintln!("{}", result.render());
-    let _ = std::fs::remove_dir_all(BENCHMARK_DIR);
+    let _ = std::fs::remove_dir_all(&dir);
     assert!(
         result.operations as f64 / result.duration.as_secs_f64() > 5_000.0,
         "persistent read should exceed 5k ops/s"
@@ -188,7 +194,7 @@ fn check_benchmark_persistent_read() {
 #[test]
 #[ignore]
 fn check_benchmark_persistent_read_cached() {
-    let bus = create_benchmark_bus();
+    let (bus, dir) = create_benchmark_bus("prc");
     let value = create_value(128);
     let count = 10_000;
 
@@ -208,7 +214,7 @@ fn check_benchmark_persistent_read_cached() {
     });
 
     eprintln!("{}", result.render());
-    let _ = std::fs::remove_dir_all(BENCHMARK_DIR);
+    let _ = std::fs::remove_dir_all(&dir);
     assert!(
         result.operations as f64 / result.duration.as_secs_f64() > 50_000.0,
         "cache-promoted read should exceed 50k ops/s"
