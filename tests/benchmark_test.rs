@@ -312,7 +312,9 @@ fn check_benchmark_value_sizes() {
 #[test]
 #[ignore]
 fn check_benchmark_redis_write() {
-    let Ok(client) = redis::Client::open("redis://127.0.0.1/") else {
+    let Ok(client) = redis::Client::open(
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string()),
+    ) else {
         eprintln!("  SKIP: Redis not available on 127.0.0.1:6379");
         return;
     };
@@ -337,7 +339,9 @@ fn check_benchmark_redis_write() {
 #[test]
 #[ignore]
 fn check_benchmark_redis_read() {
-    let Ok(client) = redis::Client::open("redis://127.0.0.1/") else {
+    let Ok(client) = redis::Client::open(
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string()),
+    ) else {
         eprintln!("  SKIP: Redis not available on 127.0.0.1:6379");
         return;
     };
@@ -367,7 +371,9 @@ fn check_benchmark_redis_read() {
 #[test]
 #[ignore]
 fn check_benchmark_redis_mixed() {
-    let Ok(client) = redis::Client::open("redis://127.0.0.1/") else {
+    let Ok(client) = redis::Client::open(
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string()),
+    ) else {
         eprintln!("  SKIP: Redis not available on 127.0.0.1:6379");
         return;
     };
