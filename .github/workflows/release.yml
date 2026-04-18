@@ -16,9 +16,6 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: tric-macos-arm64
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact: tric-macos-x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: tric-linux-x86_64
@@ -103,7 +100,6 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/tric-macos-arm64/tric-macos-arm64.tar.gz
-            artifacts/tric-macos-x86_64/tric-macos-x86_64.tar.gz
             artifacts/tric-linux-x86_64/tric-linux-x86_64.tar.gz
             artifacts/tric-linux-arm64/tric-linux-arm64.tar.gz
             artifacts/tric-freebsd-x86_64/tric-freebsd-x86_64.tar.gz
