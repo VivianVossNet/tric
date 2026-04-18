@@ -1,12 +1,47 @@
 # Installation
 
-TRIC+ ships as a single binary. Build it, place it, run it.
+TRIC+ ships as a single binary. Download it or build it, place it, run it.
 
 ## Requirements
 
-- **Rust 1.75+** (for building from source)
 - **SQLite** is bundled — no external dependency
 - **Operating systems:** FreeBSD, Debian, Ubuntu, RHEL, Rocky, Alpine, Amazon Linux, NixOS, macOS
+- **Rust 1.75+** — only required when building from source
+
+## Install a prebuilt binary
+
+Every release publishes platform binaries as assets. Pick the archive that matches your system.
+
+| Platform | Archive |
+|----------|---------|
+| macOS (Apple Silicon) | `tric-macos-arm64.tar.gz` |
+| Linux x86_64 | `tric-linux-x86_64.tar.gz` |
+| Linux arm64 | `tric-linux-arm64.tar.gz` |
+| FreeBSD x86_64 | `tric-freebsd-x86_64.tar.gz` |
+
+Intel Macs are no longer a published target — build from source if you need one.
+
+```bash
+# Replace the archive name with the one for your platform.
+VERSION="v0.5.2604181454"
+ARCHIVE="tric-linux-x86_64.tar.gz"
+
+curl -LO "https://github.com/VivianVossNet/TRICplus/releases/download/${VERSION}/${ARCHIVE}"
+tar -xzf "${ARCHIVE}"
+```
+
+The archive contains a single executable named after the platform (for example `tric-linux-x86_64`). Rename it to `tric` and move on to [Deploy](#deploy):
+
+```bash
+mv tric-linux-x86_64 tric
+chmod +x tric
+```
+
+If you have the GitHub CLI, the same thing in one line:
+
+```bash
+gh release download v0.5.2604181454 --repo VivianVossNet/TRICplus --pattern 'tric-linux-x86_64.tar.gz'
+```
 
 ## Build from source
 
@@ -29,17 +64,11 @@ The benchmark (`-b`) runs without a server and confirms the engine works on your
 
 ## Deploy
 
-Copy the binary to a location in your `PATH`:
+Copy the binary to a location in your `PATH`. The source path depends on how you obtained it — `./tric` after a download, `target/release/tric` after a source build.
 
 ```bash
-# FreeBSD
-cp target/release/tric /usr/local/bin/tric
-
-# Linux
-cp target/release/tric /usr/local/bin/tric
-
-# macOS
-cp target/release/tric /usr/local/bin/tric
+# FreeBSD, Linux, macOS
+install -m 0755 ./tric /usr/local/bin/tric
 ```
 
 ## Start the server
