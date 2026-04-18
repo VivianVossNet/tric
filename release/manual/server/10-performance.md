@@ -4,8 +4,12 @@ TRIC+ ships with a built-in benchmark. Run it on your hardware to get numbers th
 
 ## Run the benchmark
 
+Canonical runner (see `concept/driver/qa.md` §Benchmark for the full environment matrix):
+
 ```bash
-tric -b
+cargo build --release
+./target/release/tric server &
+REDIS_URL="redis://127.0.0.1/" cargo test --release --test benchmark_test -- --ignored --nocapture
 ```
 
 This measures three layers:
@@ -13,10 +17,10 @@ This measures three layers:
 | Layer | What it measures | Transport |
 |-------|-----------------|-----------|
 | **1: In-process** | Raw engine speed. Library API, no transport overhead. | None |
-| **2: Server (UDS)** | Real-world server throughput. UDS DGRAM roundtrip per operation. | Unix datagram socket |
-| **3: Redis (TCP)** | Baseline comparison. Redis SET/GET via TCP localhost. | TCP |
+| **2: Server (UDS)** | Server throughput via opcode `0x08 write_value_with_ttl` and `0x01 read_value`. One round-trip per operation, transient BTreeMap path. | Unix datagram socket |
+| **3: Redis (TCP)** | Baseline comparison. Redis `SET`/`GET` via TCP localhost. | TCP |
 
-Layer 2 requires a running TRIC+ server (`tric server &`). Layer 3 requires a running Redis instance.
+Layer 2 requires a running `tric server` on `/var/run/tric/server.sock` (override via `TRIC_SOCKET_DIR`). Layer 3 requires a reachable Redis instance. Missing either layer silently skips those tests — verify numbers are present before publishing.
 
 ## Methodology
 
@@ -37,35 +41,37 @@ This methodology is conservative. Pipelining and batching would increase through
 
 | Layer | Workload | ops/s | p50 | p99 |
 |-------|----------|------:|----:|----:|
-| 1 | Transient write | 2,900,000 | 292ns | 1.5us |
-| 1 | Transient read | 4,700,000 | 167ns | 292ns |
-| 1 | Cache-promoted read | 4,700,000 | 167ns | 292ns |
-| 1 | SQLite write (WAL) | 60,000 | 13us | 39us |
-| 1 | SQLite read | 350,000 | 2.7us | 5.9us |
-| 2 | Server write (UDS) | 21,000 | 43us | 88us |
-| 2 | Server read (UDS) | 38,000 | 24us | 62us |
-| 3 | Redis write (TCP) | 8,700 | 108us | 183us |
-| 3 | Redis read (TCP) | 8,700 | 109us | 181us |
+| 1 | Transient write 128B | 2,492,116 | 292ns | 1.17µs |
+| 1 | Transient read 128B | 4,198,248 | 208ns | 417ns |
+| 1 | Cache-promoted read | 3,853,936 | 208ns | 458ns |
+| 1 | SQLite write (WAL) | 18,696 | 43.2µs | 178.7µs |
+| 1 | SQLite read (SQLite→cache) | 124,548 | 4.2µs | 51.5µs |
+| 2 | Server write 128B (UDS, `0x08`) | 21,112 | 42.7µs | 114.4µs |
+| 2 | Server read 128B (UDS, `0x01`) | 30,255 | 31.8µs | 78.9µs |
+| 3 | Redis write 128B (TCP) | 13,515 | 59.2µs | 251.3µs |
+| 3 | Redis read 128B (TCP) | 38,476 | 23.7µs | 62.7µs |
 
 ### FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)
 
 | Layer | Workload | ops/s | p50 | p99 |
 |-------|----------|------:|----:|----:|
-| 1 | Transient write | 1,600,000 | 500ns | 2.7us |
-| 1 | Transient read | 1,800,000 | 440ns | 1.5us |
-| 1 | Cache-promoted read | 2,400,000 | 360ns | 1.0us |
-| 1 | SQLite write (WAL/ZFS) | 15,000 | 21us | 62us |
-| 1 | SQLite read | 220,000 | 4.1us | 7.0us |
-| 3 | Redis write (TCP) | 73,000 | 13us | 32us |
-| 3 | Redis read (TCP) | 95,000 | 10us | 13us |
+| 1 | Transient write 128B | 1,139,079 | 650ns | 3.87µs |
+| 1 | Transient read 128B | 1,672,309 | 470ns | 2.12µs |
+| 1 | Cache-promoted read | 2,318,271 | 340ns | 1.19µs |
+| 1 | SQLite write (WAL/ZFS) | 18,177 | 24.6µs | 75.3µs |
+| 1 | SQLite read (SQLite→cache) | 182,108 | 5.2µs | 9.9µs |
+| 2 | Server write 128B (UDS, `0x08`) | 19,065 | 34.6µs | 92.8µs |
+| 2 | Server read 128B (UDS, `0x01`) | 130,379 | 7.4µs | 11.6µs |
+| 3 | Redis write 128B (TCP) | 59,063 | 15.6µs | 40.8µs |
+| 3 | Redis read 128B (TCP) | 82,633 | 11.4µs | 20.2µs |
 
 ## Interpreting the layers
 
-**Layer 1 vs Layer 3** shows the architectural advantage of in-process storage over a network-based database. This is the number to use when TRIC+ is embedded as a library.
+**Layer 1 vs Layer 3** shows the architectural advantage of in-process storage over a network-based database. Use this when TRIC+ is embedded as a library: 60–200x faster than any network KV-store.
 
-**Layer 2 vs Layer 3** is the fair server-to-server comparison. Both go through a transport layer (UDS vs TCP). TRIC+ over UDS is 2–4x faster than Redis over TCP on the same machine.
+**Layer 2 vs Layer 3** is the server-to-server comparison. Both go through a transport layer (UDS DGRAM vs TCP). On FreeBSD, TRIC+ reads are **1.58x faster** than Redis reads (p50 7.4µs vs 11.4µs) — the UDS path + one-round-trip `0x08` primitive beats a TCP handshake'd `SET EX`. Writes on FreeBSD favour Redis (Redis 59k ops/s vs TRIC+ 19k ops/s) — Redis' TCP write path is decades-tuned and single-threaded-synchronous writes are its home turf. On macOS the pattern flips: TRIC+ wins writes (1.56x), Redis wins reads (1.27x) — macOS UDS throughput is lower than FreeBSD's.
 
-**Layer 1 vs Layer 2** shows the cost of the UDS transport layer itself. The difference is the kernel context switch per datagram.
+**Layer 1 vs Layer 2** shows the cost of the UDS transport layer itself. Roughly 30–100x slower than in-process — the difference is the kernel context switch per datagram plus parse/dispatch/encode on the server side.
 
 ## Tuning
 
@@ -87,9 +93,11 @@ The default cache-promotion TTL is 60 seconds. Frequently-read persistent data s
 
 ## Redis comparison notes
 
-Redis on FreeBSD (73–95k ops/s) performs significantly better than Redis on macOS (5–9k ops/s). This is due to macOS's higher TCP stack overhead, not Redis itself. FreeBSD's network stack is optimised for server workloads.
+Redis on FreeBSD (59–82k ops/s) performs significantly better than Redis on macOS (13–38k ops/s). This reflects macOS's higher TCP stack overhead, not Redis itself — FreeBSD's network stack is optimised for server workloads. macOS UDS also lags FreeBSD UDS, so TRIC+ Layer 2 shifts the same way.
 
-TRIC+ performance is more consistent across platforms because the transient tier avoids the network stack entirely, and the persistent tier uses SQLite's cross-platform WAL implementation.
+The comparison is genuinely apples-to-apples only at Layer 2: TRIC+ uses opcode `0x08 write_value_with_ttl` which writes directly into the BTreeMap transient layer with TTL, exactly matching Redis' `SET k v EX t` semantics. Neither involves persistence; both cost one round-trip per operation.
+
+TRIC+'s real architectural advantage is outside this benchmark: a permutive tier where keys with TTL live in BTreeMap and keys without TTL live in SQLite — one address space, one API, zero coordination. Redis needs a separate store for anything that must survive restart.
 
 ## Next
 

@@ -40,44 +40,49 @@ Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it live
 
 ## Performance
 
-Three benchmark layers ensure a fair comparison. Layer 2 (server vs server) is the apples-to-apples metric.
+Three benchmark layers, same machine, same payload, same methodology. Layer 2 (server vs server) is the apples-to-apples comparison: TRIC+ over UDS against Redis over TCP, both serving an in-memory `SET k v EX t` / `GET k` workload.
 
 ### macOS (Apple Silicon)
 
-| Layer | Workload | ops/s | vs Redis |
-|-------|----------|------:|---------:|
-| 1: In-process | Transient write 128B | 2,900,000 | — |
-| 1: In-process | Transient read 128B | 4,700,000 | — |
-| 1: In-process | Cache-promoted read | 4,700,000 | — |
-| **2: Server (UDS)** | **Write 128B** | **21,000** | **2.4x** |
-| **2: Server (UDS)** | **Read 128B** | **38,000** | **4.4x** |
-| 3: Redis (TCP) | Write 128B | 8,700 | baseline |
-| 3: Redis (TCP) | Read 128B | 8,700 | baseline |
+| Layer | Workload | ops/s | p50 | p99 | vs Redis |
+|-------|----------|------:|----:|----:|---------:|
+| 1: In-process | Transient write 128B | 2,492,116 | 292ns | 1.17µs | — |
+| 1: In-process | Transient read 128B | 4,198,248 | 208ns | 417ns | — |
+| 1: In-process | Cache-promoted read | 3,853,936 | 208ns | 458ns | — |
+| 1: In-process | SQLite write (WAL) | 18,696 | 43.2µs | 178.7µs | — |
+| **2: Server (UDS)** | **Write 128B** | **21,112** | **42.7µs** | **114.4µs** | **1.56x** |
+| **2: Server (UDS)** | **Read 128B** | **30,255** | **31.8µs** | **78.9µs** | 0.79x |
+| 3: Redis (TCP) | Write 128B | 13,515 | 59.2µs | 251.3µs | baseline |
+| 3: Redis (TCP) | Read 128B | 38,476 | 23.7µs | 62.7µs | baseline |
 
 ### FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)
 
-| Layer | Workload | ops/s | vs Redis |
-|-------|----------|------:|---------:|
-| 1: In-process | Transient write 128B | 1,600,000 | — |
-| 1: In-process | Transient read 128B | 1,800,000 | — |
-| 1: In-process | Cache-promoted read | 2,400,000 | — |
-| 3: Redis (TCP) | Write 128B | 73,000 | baseline |
-| 3: Redis (TCP) | Read 128B | 95,000 | baseline |
+| Layer | Workload | ops/s | p50 | p99 | vs Redis |
+|-------|----------|------:|----:|----:|---------:|
+| 1: In-process | Transient write 128B | 1,139,079 | 650ns | 3.87µs | — |
+| 1: In-process | Transient read 128B | 1,672,309 | 470ns | 2.12µs | — |
+| 1: In-process | Cache-promoted read | 2,318,271 | 340ns | 1.19µs | — |
+| 1: In-process | SQLite write (WAL/ZFS) | 18,177 | 24.6µs | 75.3µs | — |
+| **2: Server (UDS)** | **Write 128B** | **19,065** | **34.6µs** | **92.8µs** | 0.32x |
+| **2: Server (UDS)** | **Read 128B** | **130,379** | **7.4µs** | **11.6µs** | **1.58x** |
+| 3: Redis (TCP) | Write 128B | 59,063 | 15.6µs | 40.8µs | baseline |
+| 3: Redis (TCP) | Read 128B | 82,633 | 11.4µs | 20.2µs | baseline |
 
-**Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures real-world server throughput (UDS DGRAM roundtrip). **Layer 3** measures Redis (TCP localhost roundtrip). All single-threaded, synchronous, no pipelining, no batching. Same machine, same payloads, same methodology.
+**Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures server throughput via UDS DGRAM using opcode `0x08 write_value_with_ttl` — one round-trip, transient BTreeMap path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All single-threaded, synchronous, no pipelining, no batching.
+
+Redis' TCP stack on FreeBSD is decades-tuned and wins single-thread writes. TRIC+ wins read-heavy workloads on FreeBSD (1.58x) and write-heavy workloads on macOS (1.56x), and offers something Redis cannot: a permutive tier where keys without TTL live in SQLite for free.
 
 ### Reproduce
 
 ```bash
-# Built-in benchmark (recommended)
-tric -b
+# Build the release binary first — cargo test does not rebuild it.
+cargo build --release
 
-# With Redis comparison (Redis must be running)
-REDIS_URL="redis://127.0.0.1/" tric -b
+# Start a TRIC+ server in the background
+./target/release/tric server &
 
-# With TRIC+ server comparison (server must be running)
-tric server &
-tric -b
+# Run the full benchmark matrix (Redis must be reachable)
+REDIS_URL="redis://127.0.0.1/" cargo test --release --test benchmark_test -- --ignored --nocapture
 ```
 
 ## Installation
