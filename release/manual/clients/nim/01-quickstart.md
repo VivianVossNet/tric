@@ -1,6 +1,6 @@
-# Nim Bridge — Quickstart
+# Nim Bridge: Quickstart
 
-The TRIC+ Nim client is a standard nimble package that wraps the C bridge via `{.importc.}` + `{.compile.}` pragmas. It exposes `TricConnection` — a value type with automatic `=destroy` cleanup, Nim-native `string` / `seq[tuple]` returns, and idiomatic exception-based error handling. The Nim layer compiles the C source inline; no pre-built libraries.
+The TRIC+ Nim client is a standard nimble package that wraps the C bridge via `{.importc.}` and `{.compile.}` pragmas. It exposes `TricConnection`: a value type with automatic `=destroy` cleanup, Nim-native `string` and `seq[tuple]` returns, and idiomatic exception-based error handling. The Nim layer compiles the C source inline, so there are no pre-built libraries to manage. Permutive routing happens on the server: a `write` followed by `ttl` lives in the `BTreeMap`, a plain `write` lives in SQLite, and the Nim code talks to one API.
 
 ## Requirements
 
@@ -48,7 +48,7 @@ if value.isSome():
   echo value.get()  # "alice"
 ```
 
-`read` returns `Option[string]`. An empty optional means the key does not exist (or the read failed — bridges do not distinguish).
+`read` returns `Option[string]`. An empty optional means the key does not exist, or the read failed; the bridge does not distinguish the two cases.
 
 ### Delete
 
@@ -111,7 +111,7 @@ The Nim bridge uses idiomatic Nim error semantics:
 - **Communication failures** → `raise TricError` (`write`, `del`, `ttl` raise on socket error)
 - **`cad` value mismatch** → returns `false` (mismatch is not an error)
 
-`TricConnection` is non-copyable (`=copy` is `{.error.}`); pass by `var` or share via a higher-level container. `=destroy` is the only lifecycle hook the caller needs to know about — it runs automatically.
+`TricConnection` is non-copyable (`=copy` is marked `{.error.}`). Pass by `var`, or share via a higher-level container. `=destroy` is the only lifecycle hook the caller needs to know about; it runs automatically.
 
 ## Test
 
@@ -139,13 +139,13 @@ kill $SERVER_PID
 rm -rf /tmp/tric-nim-test
 ```
 
-The test suite exercises all six primitives plus a varied-string round-trip — 14 test blocks via `std/unittest`.
+The test suite exercises all six primitives plus a varied-string round-trip: 14 test blocks via `std/unittest`.
 
 ## Next
 
-- [C Bridge Quickstart](../c/01-quickstart.md) — the underlying C layer
-- [C++ Bridge Quickstart](../cpp/01-quickstart.md) — the C++ RAII wrapper
-- [Swift Bridge Quickstart](../swift/01-quickstart.md) — the Swift SPM package
-- [Zig Bridge Quickstart](../zig/01-quickstart.md) — the Zig `build.zig` package
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [C Bridge Quickstart](../c/01-quickstart.md) : the underlying C layer that every Wave-2 bridge consumes via FFI
+- [C++ Bridge Quickstart](../cpp/01-quickstart.md) : the C++ RAII wrapper
+- [Swift Bridge Quickstart](../swift/01-quickstart.md) : the Swift SPM package
+- [Zig Bridge Quickstart](../zig/01-quickstart.md) : the Zig `build.zig` package
+- [Client Overview](../00-overview.md) : the wire protocol from the client perspective, plus the minimum API surface every bridge must provide
+- [Wire Protocol](../../server/04-wire-protocol.md) : the full opcode reference, including request and response formats for every primitive

@@ -1,4 +1,4 @@
-# Lua Bridge — Quickstart
+# Lua Bridge: Quickstart
 
 The TRIC+ Lua client is a loadable C module (`tric.so` / `tric.dylib`) registered with the Lua interpreter via `require('tric')`. It returns a module table with `connect`, which yields a userdata with metatable methods (`conn:read`, `conn:write`, etc.). Automatic garbage collection via the `__gc` metamethod releases the connection when Lua reaps the userdata.
 
@@ -50,7 +50,7 @@ if value then
 end
 ```
 
-`conn:read` returns the value as a Lua string (8-bit clean — holds any bytes including nulls), or `nil` if the key is absent.
+`conn:read` returns the value as a Lua string, which is 8-bit clean and holds any bytes including nulls. It returns `nil` if the key is absent.
 
 ### Delete
 
@@ -143,7 +143,7 @@ Output: `14 passed, 0 failed`.
 
 ## Next
 
-- [C Bridge Quickstart](../c/01-quickstart.md) — underlying C layer
-- [Tcl Bridge Quickstart](../tcl/01-quickstart.md) — sibling loadable-C-extension pattern
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [C Bridge Quickstart](../c/01-quickstart.md): the underlying C layer that the Lua module links against.
+- [Tcl Bridge Quickstart](../tcl/01-quickstart.md) : sibling loadable-C-extension pattern
+- [Client Overview](../00-overview.md) : the wire protocol from the client perspective, plus the minimum API surface every bridge must provide
+- [Wire Protocol](../../server/04-wire-protocol.md) : the full opcode reference, including request and response formats for every primitive

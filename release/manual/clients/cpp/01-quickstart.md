@@ -1,4 +1,4 @@
-# C++ Bridge — Quickstart
+# C++ Bridge: Quickstart
 
 The TRIC+ C++ client is a single header-only wrapper (`tric.hpp`) built on top of the C bridge. It provides an idiomatic RAII API with `std::optional`, `std::string_view`, and `std::vector`, compiles to the same machine code as the raw C calls, and builds without exceptions.
 
@@ -13,9 +13,9 @@ The C++ layer is a pure inline wrapper. There is no separate `.cpp` implementati
 
 | File | Purpose |
 |------|---------|
-| `tric.hpp` | C++ public API — `tric::connection` RAII class, six primitive methods |
-| `tric.h`   | C header — forward-declared types and function prototypes (from `bridges/c/`) |
-| `tric.c`   | C implementation — socket handling, wire protocol (from `bridges/c/`) |
+| `tric.hpp` | C++ public API: `tric::connection` RAII class, six primitive methods |
+| `tric.h`   | C header from `bridges/c/`: forward-declared types and function prototypes |
+| `tric.c`   | C implementation from `bridges/c/`: socket handling, wire-protocol encoding and decoding |
 
 ## Build
 
@@ -62,7 +62,7 @@ if (auto value = connection.read("user:42")) {
 }
 ```
 
-`read` returns `std::optional<std::string>`. An empty optional means the key does not exist (or the read failed — bridges do not distinguish). The returned `std::string` owns its bytes and can hold arbitrary octets including embedded nulls.
+`read` returns `std::optional<std::string>`. An empty optional means the key does not exist, or the read failed; the bridge does not distinguish the two cases. The returned `std::string` owns its bytes and can hold arbitrary octets including embedded nulls.
 
 ### Delete
 
@@ -119,17 +119,17 @@ Returns `std::vector<std::pair<std::string, std::string>>` containing all key-va
 
 The bridge is **exception-free**. No method throws, allocates unexpectedly, or aborts on error. Failure paths:
 
-- `read` — empty `std::optional` means the key is absent or the read failed
-- `write`, `del`, `cad`, `ttl` — return `false` on communication error or (for `cad`) on value mismatch
-- `scan` — returns an empty vector on error or when no keys match
+- `read`: an empty `std::optional` means the key is absent or the read failed.
+- `write`, `del`, `cad`, `ttl`: return `false` on communication error. For `cad`, `false` also means the stored value did not match the expected value.
+- `scan`: returns an empty vector on error or when no keys match the prefix.
 
 The bridge does not retry. The caller decides whether to reconnect and retry. Design rationale: many C++ deployments build with `-fno-exceptions` (games, embedded, kernel modules, latency-sensitive servers). Keeping the bridge exception-free makes it universally usable.
 
 ## RAII semantics
 
 - `tric::connection` is **non-copyable** (`= delete` on copy constructor and copy assignment)
-- `tric::connection` is **move-only** — move construction and move assignment transfer ownership; the moved-from connection becomes inert
-- The destructor closes the socket unconditionally — safe to rely on
+- `tric::connection` is **move-only**. Move construction and move assignment transfer ownership; the moved-from connection becomes inert.
+- The destructor closes the socket unconditionally, so you can rely on it.
 
 ```cpp
 tric::connection a("/var/run/tric/server.sock");
@@ -153,6 +153,6 @@ The test binary exercises all six primitives plus move-construction semantics ag
 
 ## Next
 
-- [C Bridge Quickstart](../c/01-quickstart.md) — the underlying C layer
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [C Bridge Quickstart](../c/01-quickstart.md) : the underlying C layer that every Wave-2 bridge consumes via FFI
+- [Client Overview](../00-overview.md) : the wire protocol from the client perspective, plus the minimum API surface every bridge must provide
+- [Wire Protocol](../../server/04-wire-protocol.md) : the full opcode reference, including request and response formats for every primitive

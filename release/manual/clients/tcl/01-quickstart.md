@@ -1,4 +1,4 @@
-# Tcl Bridge — Quickstart
+# Tcl Bridge: Quickstart
 
 The TRIC+ Tcl client is a loadable C extension (`libtric_tcl.dylib` / `.so`) that exposes the six TRIC+ primitives as `tric::*` Tcl commands. Scripts `package require tric` and call the commands; the extension takes care of the C bridge underneath.
 
@@ -35,7 +35,7 @@ if {![tric::valid $h]} {
 tric::disconnect $h
 ```
 
-`tric::connect` returns a handle token (opaque string like `trich1`). Pass the handle to all subsequent `tric::*` commands. Call `tric::disconnect` when done — no automatic cleanup, Tcl has no destructor hook.
+`tric::connect` returns a handle token, an opaque string such as `trich1`. Pass the handle to all subsequent `tric::*` commands. Call `tric::disconnect` when done; Tcl has no destructor hook, so there is no automatic cleanup.
 
 ## Primitives
 
@@ -95,13 +95,13 @@ Returns a flat Tcl list: `{key1 value1 key2 value2 …}`. Consume with `foreach 
 | Command | Args | Result |
 |---------|------|--------|
 | `tric::connect` | socketPath | handle token or error |
-| `tric::disconnect` | handle | — |
+| `tric::disconnect` | handle | nothing |
 | `tric::valid` | handle | 1 / 0 |
 | `tric::read` | handle key | value (byte-array) or "" |
-| `tric::write` | handle key value | — or error |
-| `tric::del` | handle key | — or error |
+| `tric::write` | handle key value | nothing on success, Tcl error on failure |
+| `tric::del` | handle key | nothing on success, Tcl error on failure |
 | `tric::cad` | handle key expected | 1 / 0, or error |
-| `tric::ttl` | handle key durationMs | — or error |
+| `tric::ttl` | handle key durationMs | nothing on success, Tcl error on failure |
 | `tric::scan` | handle prefix | flat list {k v k v …} |
 
 ## Error handling
@@ -139,10 +139,10 @@ kill $SERVER_PID
 rm -rf /tmp/tric-tcl-test
 ```
 
-The test suite exercises all six primitives plus a varied-bytes round-trip — 14 `tcltest` checks.
+The test suite exercises all six primitives plus a varied-bytes round-trip: 14 `tcltest` checks.
 
 ## Next
 
-- [C Bridge Quickstart](../c/01-quickstart.md) — underlying C layer
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [C Bridge Quickstart](../c/01-quickstart.md): the underlying C layer that the Tcl extension links against.
+- [Client Overview](../00-overview.md) : the wire protocol from the client perspective, plus the minimum API surface every bridge must provide
+- [Wire Protocol](../../server/04-wire-protocol.md) : the full opcode reference, including request and response formats for every primitive

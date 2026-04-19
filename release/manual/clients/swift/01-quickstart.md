@@ -1,6 +1,6 @@
-# Swift Bridge — Quickstart
+# Swift Bridge: Quickstart
 
-The TRIC+ Swift client is a Swift Package Manager (SPM) package that wraps the C bridge with an idiomatic, exception-free Swift API. It exposes `Tric.Connection` — a RAII class with `throws`-based error handling, `Data`-primary inputs, and `String` convenience overloads. The Swift layer compiles to the same machine code as the raw C calls; there is no runtime overhead beyond the FFI.
+The TRIC+ Swift client is a Swift Package Manager (SPM) package that wraps the C bridge with an idiomatic Swift API. It exposes `Tric.Connection`: a RAII class with `throws`-based error handling, `Data`-primary inputs, and `String` convenience overloads. The Swift layer compiles to the same machine code as the raw C calls, so there is no runtime overhead beyond the FFI. Permutive routing stays on the server: a `write` followed by `ttl` lives in the `BTreeMap` tier, a plain `write` lives in SQLite, and the Swift code does not have to care which.
 
 ## Requirements
 
@@ -46,7 +46,7 @@ guard connection.isValid else {
 
 // ... use the connection ...
 
-// Destructor runs on last release of `connection` — the socket closes and
+// Destructor runs on last release of `connection`. The socket closes and
 // the temporary client socket file is removed.
 ```
 
@@ -65,7 +65,7 @@ if let data = connection.read("user:42"),
 }
 ```
 
-`read` returns `Data?`. A `nil` result means the key does not exist (or the read failed — bridges do not distinguish). The returned `Data` owns its bytes and can hold arbitrary octets, including embedded nulls.
+`read` returns `Data?`. A `nil` result means the key does not exist, or the read failed; the bridge does not distinguish the two cases. The returned `Data` owns its bytes and can hold arbitrary octets including embedded nulls.
 
 ### Delete
 
@@ -83,7 +83,7 @@ let matched = try connection.cad("job:1", expected: "pending")
 // matched == false: value was something else, key is untouched
 ```
 
-Atomic: if the current value equals the expected value, the key is deleted and the method returns `true`. Otherwise the key is untouched and the method returns `false`. Throws `TricError.communication` on socket failure — distinguishes "mismatch" (returns `false`) from "communication error" (throws).
+Atomic. If the current value equals the expected value, the key is deleted and the method returns `true`; otherwise the key is untouched and the method returns `false`. Socket failures throw `TricError.communication`, which distinguishes a value mismatch (returns `false`) from a transport error (throws).
 
 ### TTL
 
@@ -100,7 +100,7 @@ try connection.ttl("session:abc", durationMs: 3_600_000)
 ```swift
 let pairs = connection.scan("user:")
 for (key, value) in pairs {
-    // key, value are Data — convert to String if needed
+    // key and value are Data; convert to String if needed
 }
 ```
 
@@ -137,9 +137,9 @@ Swift's `throws` is a zero-cost return flag (not exception-based), so exception-
 
 ## RAII semantics
 
-- `Connection` is a `class` — reference type with deterministic `deinit`
+- `Connection` is a `class`, i.e. a reference type with deterministic `deinit`.
 - Copying the reference shares the underlying socket; `deinit` runs when the last reference releases
-- Passing across threads requires your own synchronisation — the bridge itself is not thread-safe (the C layer uses a single `request_counter` per connection without atomics)
+- Passing across threads requires your own synchronisation. The bridge itself is not thread-safe; the C layer uses a single `request_counter` per connection without atomics.
 
 For thread safety, either serialise calls on your own actor / queue, or open one `Connection` per thread / actor.
 
@@ -160,7 +160,7 @@ The test harness starts a scratch `tric server` on a temporary UDS path, runs 14
 
 ## Next
 
-- [C Bridge Quickstart](../c/01-quickstart.md) — the underlying C layer
-- [C++ Bridge Quickstart](../cpp/01-quickstart.md) — the C++ RAII wrapper (sibling Wave-2 FFI consumer)
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [C Bridge Quickstart](../c/01-quickstart.md) : the underlying C layer that every Wave-2 bridge consumes via FFI
+- [C++ Bridge Quickstart](../cpp/01-quickstart.md) : the C++ RAII wrapper, a sibling Wave-2 FFI consumer
+- [Client Overview](../00-overview.md) : the wire protocol from the client perspective, plus the minimum API surface every bridge must provide
+- [Wire Protocol](../../server/04-wire-protocol.md) : the full opcode reference, including request and response formats for every primitive

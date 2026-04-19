@@ -1,6 +1,6 @@
-# Zig Bridge — Quickstart
+# Zig Bridge: Quickstart
 
-The TRIC+ Zig client is a standard Zig package that wraps the C bridge via `@cImport`. It exposes `tric.Connection` — a struct with explicit-allocator semantics, Zig-native error unions, and the six TRIC+ primitives. The Zig wrapper compiles the C source as part of the package build; no pre-built libraries, no system dependencies beyond POSIX.
+The TRIC+ Zig client is a standard Zig package that wraps the C bridge via `@cImport`. It exposes `tric.Connection`: a struct with explicit-allocator semantics, Zig-native error unions, and the six TRIC+ primitives. The Zig wrapper compiles the C source as part of the package build, so there are no pre-built libraries to manage and no system dependencies beyond POSIX. Permutive routing stays on the server: a `write` followed by `ttl` lives in the transient `BTreeMap`, a plain `write` lives in SQLite, and the Zig code sees one API.
 
 ## Requirements
 
@@ -57,7 +57,7 @@ pub fn main() !void {
 }
 ```
 
-`Connection.init` binds a temporary socket at `/tmp/tric-c-{pid}.sock` and connects to the server. `deinit` closes the file descriptor and removes the temporary socket. Zig has no destructors — the explicit `defer connection.deinit();` makes cleanup visible at the call site.
+`Connection.init` binds a temporary socket at `/tmp/tric-c-{pid}.sock` and connects to the server. `deinit` closes the file descriptor and removes the temporary socket. Zig has no destructors, and the explicit `defer connection.deinit();` makes cleanup visible at the call site.
 
 ## Primitives
 
@@ -72,7 +72,7 @@ if (try connection.read("user:42")) |value| {
 }
 ```
 
-`read` returns `!?[]u8` — an error union over a nullable slice. `null` means the key is absent; a non-null result is caller-owned memory allocated from the connection's allocator. Free with `allocator.free(value)`.
+`read` returns `!?[]u8`, an error union over a nullable slice. `null` means the key is absent; a non-null result is caller-owned memory allocated from the connection's allocator. Free with `allocator.free(value)`.
 
 ### Delete
 
@@ -109,7 +109,7 @@ const pairs = try connection.scan("user:");
 defer tric.freeScan(allocator, pairs);
 
 for (pairs) |pair| {
-    // pair.key and pair.value are []u8 — owned by the returned slice
+    // pair.key and pair.value are []u8, owned by the returned slice
 }
 ```
 
@@ -137,18 +137,18 @@ Returns `![]tric.Pair` where each `Pair` is `{ key: []u8, value: []u8 }`. All me
 
 The bridge returns `Error` from `src/root.zig`:
 
-- `error.ConnectionInvalid` — operations attempted on an invalidly-opened connection (reserved; all current methods succeed or return `error.Communication`)
-- `error.Communication` — socket failure (send, recv, or the server returned an error opcode)
-- `error.OutOfMemory` — allocator could not satisfy a read / scan allocation
+- `error.ConnectionInvalid`: operations attempted on an invalidly-opened connection. Reserved; all current methods succeed or return `error.Communication`.
+- `error.Communication`: socket failure. The send call errored, the recv call errored, or the server returned an error opcode.
+- `error.OutOfMemory`: the allocator could not satisfy a read or scan allocation.
 
-Absent values are `null` in the `?[]u8` union, not errors. `cad` mismatch is `false`, not an error. The bridge does not retry — the caller decides whether to reconnect.
+Absent values are `null` in the `?[]u8` union, not errors. `cad` mismatch is `false`, not an error. The bridge does not retry. The caller decides whether to reconnect.
 
 ## Memory model
 
 All caller-facing byte containers are `[]u8` allocated from the allocator passed to `Connection.init`. The connection stores a reference to the allocator; all `read` / `scan` allocations come from it. Free with the same allocator:
 
-- `read` returns `?[]u8` — `allocator.free(value)` after use
-- `scan` returns `[]Pair` — `tric.freeScan(allocator, pairs)` frees everything
+- `read` returns `?[]u8`; call `allocator.free(value)` after use.
+- `scan` returns `[]Pair`; call `tric.freeScan(allocator, pairs)` to free every key, every value, and the outer slice in one call.
 
 Zig's explicit allocator policy makes ownership unambiguous. The bridge never allocates behind the caller's back.
 
@@ -178,12 +178,12 @@ kill $SERVER_PID
 rm -rf /tmp/tric-zig-test
 ```
 
-The test binary exercises all six primitives plus a varied-slice round-trip — 14 test blocks total — against the running server.
+The test binary exercises all six primitives plus a varied-slice round-trip, 14 test blocks in total, against the running server.
 
 ## Next
 
-- [C Bridge Quickstart](../c/01-quickstart.md) — the underlying C layer
-- [C++ Bridge Quickstart](../cpp/01-quickstart.md) — the C++ RAII wrapper (sibling Wave-2 FFI consumer)
-- [Swift Bridge Quickstart](../swift/01-quickstart.md) — the Swift SPM package (sibling Wave-2 FFI consumer)
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [C Bridge Quickstart](../c/01-quickstart.md) : the underlying C layer that every Wave-2 bridge consumes via FFI
+- [C++ Bridge Quickstart](../cpp/01-quickstart.md) : the C++ RAII wrapper, a sibling Wave-2 FFI consumer
+- [Swift Bridge Quickstart](../swift/01-quickstart.md) : the Swift SPM package (sibling Wave-2 FFI consumer)
+- [Client Overview](../00-overview.md) : the wire protocol from the client perspective, plus the minimum API surface every bridge must provide
+- [Wire Protocol](../../server/04-wire-protocol.md) : the full opcode reference, including request and response formats for every primitive

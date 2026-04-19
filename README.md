@@ -1,6 +1,12 @@
 # TRIC+
 
-**Permutive Database Engine** — data permutes between transient memory and persistent storage based on lifetime, not configuration.
+**The database that decides where your data lives, so you do not have to.**
+
+Every production stack that needs both a cache and a database asks the developer to choose, configure two systems, and keep them in sync by hand. TRIC+ does not ask. Write a value with a time-to-live and it lives in nanosecond-fast memory. Write it without one and it lives on disk. The API does not change. You think in how long your data needs to live; the engine decides where it lives.
+
+This is **permutive storage**: data permutes between a transient tier (a `BTreeMap` in memory) and a persistent tier (SQLite on disk) according to lifetime, without a single configuration knob. One engine. One wire protocol. Six primitives that cover what production actually needs: read, write, delete, compare-and-delete, time-to-live, prefix scan.
+
+On FreeBSD, the canonical deployment target, TRIC+ is faster than Redis in both read and write quadrants of the server-to-server comparison. Seven language bridges are already shipped, thirteen more on the roadmap. The server is free for any single-host production use under the Business Source License, and every tagged version converts to Apache 2.0 four years after release. The reader who needed a KV store that was honest about persistence, fast on the platform they actually run, and legally clear now has one.
 
 ![C](https://img.shields.io/badge/C-ready-4caf50?style=flat-square&logo=c)
 ![C++](https://img.shields.io/badge/C++-ready-4caf50?style=flat-square&logo=cplusplus)
@@ -23,65 +29,63 @@
 ![Dart](https://img.shields.io/badge/Dart-planned-555555?style=flat-square&logo=dart)
 ![Rust](https://img.shields.io/badge/Rust-native-dea584?style=flat-square&logo=rust)
 
-Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it lives in SQLite. The API doesn't change. The developer thinks in lifetimes, not systems.
+Write a value. Set a TTL and it lives in a `BTreeMap`. Don't set a TTL and it lives in SQLite. The API doesn't change. The developer thinks in lifetimes, not systems.
 
 ## What it does
 
-- **Six primitives:** read, write, delete, compare-and-delete, TTL, prefix scan
-- **Two storage tiers:** transient (BTreeMap, nanosecond access) and persistent (SQLite, survives restarts)
-- **Automatic routing:** TTL present = transient. No TTL = persistent. Cache-promotion on read.
-- **Single binary:** `tric server` starts the daemon, `tric <command>` is the CLI
-- **Wire protocol:** UDS DGRAM (local) + UDP (network) with per-datagram ChaCha20-Poly1305 encryption
-- **SQL interface:** `tric query "SELECT * FROM users WHERE key = '42'"`
-- **Import/Export:** SQL dumps (MySQL, PostgreSQL, SQLite), `.tric` Brotli-compressed archives, diff-import
-- **Instance management:** multiple projects with slot-based cloning under `/var/db/tric/`
-- **20 language bridges** planned, 7 ready (C, C++, Swift, Nim, Lua, Tcl, Zig — Waves 1–2 complete) — C FFI base, then native socket clients for each language
-- **8 CMS/shop integrations** planned (WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco)
+- **Six primitives:** read, write, delete, compare-and-delete, TTL, prefix scan. Nothing else; every higher-level pattern composes from these.
+- **Two storage tiers:** transient (`BTreeMap`, nanosecond access) and persistent (SQLite, survives restarts). Transparent to the caller.
+- **Automatic routing:** TTL present places the value in the transient tier. No TTL places it in persistent storage. Reads promote hot persistent keys into the transient cache for one minute.
+- **Single binary:** `tric server` starts the daemon, `tric <command>` is the CLI. No external runtime dependency.
+- **Wire protocol:** UDS DGRAM for local clients, UDP for network clients. Each network datagram is encrypted with ChaCha20-Poly1305 and padded with random noise, so an observer on the wire cannot determine operation type or payload size.
+- **SQL interface:** `tric query "SELECT * FROM users WHERE key = '42'"`. The SQL layer reads directly from the persistent tier.
+- **Import / Export:** native SQL dumps (MySQL, PostgreSQL, SQLite), `.tric` Brotli-compressed archives, differential imports that apply only what changed.
+- **Instance management:** multiple projects live under `/var/db/tric/`, each with slot-based clones for staging, migration, and A/B work.
+- **20 language bridges** planned, 7 ready today (C, C++, Swift, Nim, Lua, Tcl, Zig; Waves 1 and 2 complete). C is the FFI foundation; later waves use native sockets for each language's idiomatic client.
+- **8 CMS and shop integrations** planned on top of the Wave 3 bridges: WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco.
 
 ## Performance
 
-Three benchmark layers, same machine, same payload, same methodology. Measured on **FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)** — the canonical deployment target. Layer 2 (server vs server) is the apples-to-apples comparison: TRIC+ over UDS against Redis over TCP, both serving an in-memory `SET k v EX t` / `GET k` workload.
+Three benchmark layers, one machine, one payload, one methodology. Measured on **FreeBSD 15** (AMD Ryzen 5 3600, ZFS, Jail), which is the canonical deployment target for TRIC+. Layer 2 is the apples-to-apples comparison: TRIC+ over UDS against Redis over TCP, both serving an in-memory `SET k v EX t` / `GET k` workload.
 
 | Layer | Workload | ops/s | p50 | p99 | vs Redis |
 |-------|----------|------:|----:|----:|---------:|
-| 1: In-process | Transient write 128B | 1,645,225 | 500ns | 1.47µs | — |
-| 1: In-process | Transient read 128B | 2,199,671 | 370ns | 770ns | — |
-| 1: In-process | Cache-promoted read | 2,737,603 | 320ns | 570ns | — |
-| 1: In-process | SQLite write (WAL/ZFS) | 18,114 | 23.9µs | 68.1µs | — |
-| **2: Server (UDS)** | **Write 128B** | **67,570** | **14.5µs** | **22.9µs** | **1.03x** |
-| **2: Server (UDS)** | **Read 128B** | **91,675** | **10.6µs** | **17.5µs** | **1.16x** |
-| 3: Redis (TCP) | Write 128B | 65,383 | 15.2µs | 16.8µs | baseline |
-| 3: Redis (TCP) | Read 128B | 79,129 | 12.3µs | 22.1µs | baseline |
+| 1: In-process | Transient write 128 B | 1,645,225 | 500 ns | 1.47 µs | n/a |
+| 1: In-process | Transient read 128 B | 2,199,671 | 370 ns | 770 ns | n/a |
+| 1: In-process | Cache-promoted read | 2,737,603 | 320 ns | 570 ns | n/a |
+| 1: In-process | SQLite write (WAL, ZFS) | 18,114 | 23.9 µs | 68.1 µs | n/a |
+| **2: Server (UDS)** | **Write 128 B** | **67,570** | **14.5 µs** | **22.9 µs** | **1.03x** |
+| **2: Server (UDS)** | **Read 128 B** | **91,675** | **10.6 µs** | **17.5 µs** | **1.16x** |
+| 3: Redis (TCP) | Write 128 B | 65,383 | 15.2 µs | 16.8 µs | baseline |
+| 3: Redis (TCP) | Read 128 B | 79,129 | 12.3 µs | 22.1 µs | baseline |
 
-**Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures server throughput via UDS DGRAM using opcode `0x02 write_value` with `duration_ms > 0` — one round-trip, transient BTreeMap path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All single-threaded, synchronous, no pipelining, no batching.
+**Layer 1** measures raw engine speed in-process, no transport. **Layer 2** measures server throughput via UDS DGRAM using opcode `0x02 write_value` with `duration_ms > 0`: one round-trip on the transient `BTreeMap` path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All benchmarks run single-threaded and synchronously, without pipelining or batching.
 
-The single-shot SET/GET above is Redis' home discipline. TRIC+'s own architectural strengths — permutive routing (TTL = transient, no TTL = persistent, one API), cache-promotion, prefix-scan as a first-class operation, atomic CAS without scripting, concurrent multi-client mixed workloads — are characterised in [`release/manual/server/10-performance.md`](release/manual/server/10-performance.md) §TRIC+-specific workloads.
-
-TRIC+ beats Redis on FreeBSD in both Layer-2 quadrants: writes (1.03x) and reads (1.16x). Beyond raw throughput, TRIC+ offers what Redis cannot: a permutive tier where keys without TTL live in SQLite for free, atomic CAS without Lua scripting (292x faster), and prefix-scan as a first-class operation (65x faster than Redis KEYS).
+The single-shot SET and GET above are Redis' home discipline, and TRIC+ beats Redis on both quadrants on FreeBSD. TRIC+'s own architectural strengths, permutive routing, cache-promotion, prefix-scan as a first-class operation, atomic compare-and-delete without scripting, and concurrent multi-client mixed workloads, are characterised in [`release/manual/server/10-performance.md`](release/manual/server/10-performance.md) under §TRIC+-specific workloads. Among them: atomic CAS is 292 times faster than the Redis Lua-scripting equivalent, and prefix scan is 65 times faster than `KEYS *`.
 
 ### Reproduce
 
 ```bash
-# Build the release binary first — cargo test does not rebuild it.
+# Build the release binary first. cargo test does not rebuild it.
 cargo build --release
 
-# Start a TRIC+ server in the background
+# Start a TRIC+ server in the background.
 ./target/release/tric server &
 
-# Run the full benchmark matrix (Redis must be reachable)
+# Run the full benchmark matrix. Redis must be reachable.
 REDIS_URL="redis://127.0.0.1/" cargo test --release --test benchmark_test -- --ignored --nocapture
 ```
 
 ## Installation
 
-### As library
+### As a library
 
 ```toml
 [dependencies]
 tric = "0.5.YYMMDDHHMM"  # see latest release
 ```
 
-### As server
+### As a server
 
 ```bash
 cargo build --release
@@ -90,24 +94,26 @@ TRIC_BASE_DIR=/var/db/tric TRIC_INSTANCE=myapp TRIC_SLOT=0 ./target/release/tric
 
 ## Library API
 
+The six primitives are the whole surface. Everything else composes from them.
+
 ```rust
 use tric::{create_tric, Bytes};
 use std::time::Duration;
 
 let tric = create_tric();
 
-// Persistent (no TTL = SQLite when used via server)
+// Persistent: no TTL, so the value lives in SQLite when used via the server.
 tric.write_value(b"user:42", b"alice");
 assert_eq!(tric.read_value(b"user:42"), Some(Bytes::from_static(b"alice")));
 
-// Transient (TTL = BTreeMap, gone after expiry)
+// Transient: a TTL routes the value into the BTreeMap tier, gone after expiry.
 tric.write_value(b"session:abc", b"token");
 tric.write_ttl(b"session:abc", Duration::from_secs(3600));
 
-// Prefix scan
+// Prefix scan, sorted, first-class.
 let users = tric.find_by_prefix(b"user:");
 
-// Compare-and-delete (atomic job claiming)
+// Compare-and-delete: atomic job claiming with no scripting.
 tric.delete_value_if_match(b"job:1", b"pending");
 ```
 
@@ -115,16 +121,16 @@ tric.delete_value_if_match(b"job:1", b"pending");
 
 | Method | Purpose |
 |--------|---------|
-| `read_value(key)` | Returns value or `None` if absent/expired |
-| `write_value(key, value)` | Sets value, clears any existing TTL |
-| `delete_value(key)` | Removes key and TTL state. Missing keys: silent no-op |
-| `delete_value_if_match(key, expected)` | Deletes only if current value equals `expected` |
-| `write_ttl(key, duration)` | Sets expiry on existing key. Missing key: silent no-op |
-| `find_by_prefix(prefix)` | Returns all matching `(key, value)` pairs, sorted |
+| `read_value(key)` | Return the value, or `None` if absent or expired |
+| `write_value(key, value)` | Store the value and clear any existing TTL |
+| `delete_value(key)` | Remove the key and its TTL state. Silent on missing keys |
+| `delete_value_if_match(key, expected)` | Delete only if the current value equals `expected` |
+| `write_ttl(key, duration)` | Attach an expiry to an existing key. Silent on missing keys |
+| `find_by_prefix(prefix)` | Return all matching `(key, value)` pairs, sorted |
 
 ## Server CLI
 
-FreeBSD-style short flags. No GNU long options.
+FreeBSD-style short flags, no GNU long options.
 
 ```
 usage: tric <command> [args...]
@@ -184,12 +190,12 @@ usage: tric <command> [args...]
 
 ## Wire protocol
 
-Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram is encrypted with ChaCha20-Poly1305 and padded with random noise — an observer cannot determine operation type or payload size.
+Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram is encrypted with ChaCha20-Poly1305 and padded with random noise, so that an observer on the wire cannot determine operation type or payload size.
 
 | Opcode range | Family |
 |--------------|--------|
 | `0x01`–`0x07` | Core primitives (read, write, delete, CAS, TTL, scan, query) |
-| `0x10`–`0x1A` | Control/Admin (auth, ping, status, shutdown, reload, keys, inspect, dump, restore) |
+| `0x10`–`0x1A` | Control / Admin (auth, ping, status, shutdown, reload, keys, inspect, dump, restore) |
 | `0x80`–`0x81` | Success responses |
 | `0x90`–`0x91` | Streaming (scan chunks) |
 | `0xA0`–`0xA7` | Error responses |
@@ -197,43 +203,43 @@ Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram 
 
 ## Language bridges
 
-20 languages in four waves. Each bridge undergoes the same quality gate as the core engine.
+20 languages in four waves. Each bridge undergoes the same quality gate as the core engine: a dedicated test suite against a running server, strict compilation with warnings as errors, and the project's Hafenrundfahrt before every merge.
 
 | Wave | Languages | Mechanism | Ready |
 |------|-----------|-----------|-------|
-| 1 | **C** | Shared library (.so/.dylib), FFI base | 1/1 |
+| 1 | **C** | Shared library (`.so` / `.dylib`), FFI base | 1/1 |
 | 2 | **C++**, **Swift**, **Nim**, **Lua**, **Tcl**, **Zig** | C FFI consumers | 6/6 |
 | 3 | PHP, Java, Kotlin, Python, Ruby, C#/.NET, Go | Native socket | 0/7 |
 | 4 | JavaScript, TypeScript, Perl, Elixir, Dart, Rust | Native socket | 0/6 |
 
-**Bold** = ready for production use. Remaining: planned.
+**Bold** means production-ready. Every ready bridge ships with a quickstart manual under [`release/manual/clients/`](release/manual/clients/) and an integration test suite.
 
-### CMS/Shop integrations (planned)
+### CMS and shop integrations (planned)
 
-WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco — each built on the corresponding Wave 3 bridge.
+WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco. Each builds on the corresponding Wave 3 bridge.
 
 ## Design
 
-**BTreeMap, not HashMap.** Range queries walk contiguous entries. TTL management iterates from oldest expiry. Neither works on a HashMap.
+**`BTreeMap`, not `HashMap`.** Range queries walk contiguous entries, TTL management iterates from the oldest expiry, and neither works on a `HashMap`.
 
-**Lazy expiry.** No background thread. Every operation purges expired entries first. Cost is paid by the next caller, not a separate scheduler.
+**Lazy expiry.** No background thread watches for timeouts. Every operation purges expired entries first; the cost is paid by the next caller, not by a scheduler thread that runs whether or not the store is busy.
 
-**Permutive routing.** `write_value` without TTL goes to SQLite. Add `write_ttl` and data moves to BTreeMap. Read from SQLite promotes to BTreeMap cache (60s TTL). The boundary is invisible to the caller.
+**Permutive routing.** `write_value` without a TTL goes to SQLite. An additional `write_ttl` call moves the data into the `BTreeMap`. Reading from SQLite promotes the key into the `BTreeMap` cache for 60 seconds. The boundary between tiers is invisible to the caller; they see one API.
 
-**Scoped SQLite.** Each namespace (key prefix before `:`) gets its own `.db` file. No cross-table locks. Parallel I/O. WAL mode with `NORMAL` synchronous.
+**Scoped SQLite.** Each namespace (the key prefix before `:`) gets its own `.db` file. No cross-table locks, parallel I/O, WAL mode with `NORMAL` synchronous.
 
-**FreeBSD-first CLI.** Single-letter flags, terse output, `usage:` format. No GNU long options in the interface. Defaults follow FreeBSD filesystem conventions (`/var/db/`, `/var/run/`).
+**FreeBSD-first CLI.** Single-letter flags, terse output, `usage:` format, no GNU long options. Defaults follow FreeBSD filesystem conventions (`/var/db/`, `/var/run/`).
 
 ## Size
 
-~3,500 lines of Rust across 20 source files. Single binary ~5 MB (SQLite bundled). 34 tests including server integration with persistence roundtrip. 9 benchmark tests.
+Roughly 3,500 lines of Rust across 20 source files. Single binary approximately 5 MB (SQLite bundled). 34 unit and integration tests including a server-roundtrip with persistence. 9 benchmark scenarios characterising both the Redis-comparison and TRIC+-specific workloads.
 
 ## Licence
 
 Dual model. Use whichever fits.
 
-**Server (`tric` crate — binary and library)** is licensed under the **Business Source License 1.1**. Non-production use is unrestricted. Production use on a single host is granted free of charge under the Additional Use Grant; a "host" is one OS instance (one bare-metal machine, VM, container, or FreeBSD jail each count as one). Production across more than one host, or offering TRIC+ as a managed service to third parties, requires a commercial licence. The server converts to Apache-2.0 on **2030-04-19**, or four years after the release date of each tagged version, whichever comes first. See [`LICENSE`](LICENSE) for the full text and [`LICENSE-APACHE`](LICENSE-APACHE) for the Change License.
+**Server (`tric` crate, binary and library)** is licensed under the **Business Source License 1.1**. Non-production use is unrestricted. Production use on a single host is granted free of charge under the Additional Use Grant; a "host" is one OS instance (one bare-metal machine, VM, container, or FreeBSD jail each count as one). Production across more than one host, or offering TRIC+ as a managed service to third parties, requires a commercial licence. The server converts to Apache-2.0 on **2030-04-19**, or four years after the release date of each tagged version, whichever comes first. See [`LICENSE`](LICENSE) for the full text and [`LICENSE-APACHE`](LICENSE-APACHE) for the Change License.
 
-**Language bridges (`bridges/`)** are licensed under the **BSD 3-Clause License**. No production restriction, no Change Date — use them with any TRIC+ server, any application, any deployment model. See [`bridges/LICENSE`](bridges/LICENSE).
+**Language bridges (`bridges/`)** are licensed under the **BSD 3-Clause License**. No production restriction, no Change Date. Use them with any TRIC+ server, any application, any deployment model. See [`bridges/LICENSE`](bridges/LICENSE).
 
 Copyright (c) 2025-2026 Vivian Voss. For commercial licensing, contact <https://vivianvoss.net/tric>.

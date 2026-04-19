@@ -1,13 +1,13 @@
-# C Bridge — Quickstart
+# C Bridge: Quickstart
 
-The TRIC+ C client is a single `.c` / `.h` pair with zero dependencies beyond POSIX. It speaks the TRIC+ wire protocol over UDS DGRAM.
+The TRIC+ C client is a single `.c` and `.h` pair with zero dependencies beyond POSIX. It speaks the TRIC+ wire protocol over UDS DGRAM, which means your C program talks to the permutive engine directly: write with a TTL and the value lives in the transient `BTreeMap` tier; write without one and it lives in SQLite. The bridge does not have to know which tier will hold the data, and neither do you.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `tric.h` | Public API — types and function declarations |
-| `tric.c` | Implementation — socket handling, wire protocol encoding/decoding |
+| `tric.h` | Public API: types and function declarations |
+| `tric.c` | Implementation: socket handling, wire protocol encoding and decoding |
 
 ## Build
 
@@ -140,5 +140,5 @@ The test binary exercises all six primitives against a running TRIC+ server and 
 
 ## Next
 
-- [Client Overview](../00-overview.md) — wire protocol from the client perspective
-- [Wire Protocol](../../server/04-wire-protocol.md) — full opcode reference
+- [Client Overview](../00-overview.md): the wire protocol from the client perspective, plus the minimum API surface every bridge must provide.
+- [Wire Protocol](../../server/04-wire-protocol.md): the full opcode reference, including request and response formats for every primitive.
