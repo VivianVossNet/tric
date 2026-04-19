@@ -32,8 +32,9 @@ Every number in the benchmark follows these rules:
 - **128-byte values** — consistent payload size across all tests
 - **Single client thread** — no concurrent clients (except the explicit concurrency test)
 - **Same machine** — all three layers measured on identical hardware
+- **Multi-shot median + CV gate** — every measurement runs 1 warm-up + 5 measurement shots; reported value is the median ops/s; published only if Coefficient of Variation ≤ 10 % (otherwise re-run, with explicit `MEASUREMENT UNRELIABLE` warning if the threshold is missed three times). Per-shot setup creates fresh state for Layer-1 library tests; persistent connection state for Layer-2/3 transport tests.
 
-This methodology is conservative. Pipelining and batching would increase throughput significantly, but single-operation latency is the honest metric.
+This methodology is conservative. Pipelining and batching would increase throughput significantly, but single-operation latency is the honest metric. The multi-shot reporting is governed by the source of truth in `concept/driver/qa.md` §Benchmark §Methodology.
 
 ## Reference numbers
 

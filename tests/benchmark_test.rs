@@ -78,21 +78,206 @@ where
     }
 }
 
+const WARMUP_RUNS: usize = 1;
+const MEASUREMENT_RUNS: usize = 5;
+const CV_THRESHOLD: f64 = 0.10;
+const MAX_RETRIES: usize = 2;
+
+struct MultiShotResult {
+    label: &'static str,
+    samples: Vec<BenchmarkResult>,
+}
+
+impl MultiShotResult {
+    fn read_ops_samples(&self) -> Vec<f64> {
+        self.samples
+            .iter()
+            .map(|sample| sample.operations as f64 / sample.duration.as_secs_f64())
+            .collect()
+    }
+
+    fn read_median_ops(&self) -> f64 {
+        let mut ops = self.read_ops_samples();
+        ops.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ops[ops.len() / 2]
+    }
+
+    fn read_percentile_ns(&self, percentile: u8) -> u128 {
+        let mut all_latencies: Vec<Duration> = self
+            .samples
+            .iter()
+            .flat_map(|sample| sample.latencies.iter().copied())
+            .collect();
+        all_latencies.sort();
+        let index = (all_latencies.len() * percentile as usize / 100).min(all_latencies.len() - 1);
+        all_latencies[index].as_nanos()
+    }
+
+    fn read_coefficient_variation(&self) -> f64 {
+        let ops = self.read_ops_samples();
+        let mean = ops.iter().sum::<f64>() / ops.len() as f64;
+        let variance = ops
+            .iter()
+            .map(|sample| (sample - mean).powi(2))
+            .sum::<f64>()
+            / ops.len() as f64;
+        variance.sqrt() / mean
+    }
+
+    fn render(&self) -> String {
+        format!(
+            "  {:<40} {:>10.0} ops/s  p50 {:>6}ns  p95 {:>6}ns  p99 {:>6}ns  CV {:>4.1}%",
+            self.label,
+            self.read_median_ops(),
+            self.read_percentile_ns(50),
+            self.read_percentile_ns(95),
+            self.read_percentile_ns(99),
+            self.read_coefficient_variation() * 100.0,
+        )
+    }
+}
+
+fn collect_samples<S, T, F>(
+    label: &'static str,
+    operations: usize,
+    setup: &mut S,
+    operation: &mut F,
+) -> MultiShotResult
+where
+    S: FnMut() -> T,
+    F: FnMut(&T, usize),
+{
+    for _ in 0..WARMUP_RUNS {
+        let context = setup();
+        let _ = run_benchmark(label, operations, |index| operation(&context, index));
+    }
+
+    let mut samples = Vec::with_capacity(MEASUREMENT_RUNS);
+    for _ in 0..MEASUREMENT_RUNS {
+        let context = setup();
+        samples.push(run_benchmark(label, operations, |index| {
+            operation(&context, index)
+        }));
+    }
+
+    MultiShotResult { label, samples }
+}
+
+fn collect_samples_static<F>(
+    label: &'static str,
+    operations: usize,
+    operation: &mut F,
+) -> MultiShotResult
+where
+    F: FnMut(usize),
+{
+    for _ in 0..WARMUP_RUNS {
+        let _ = run_benchmark(label, operations, &mut *operation);
+    }
+
+    let mut samples = Vec::with_capacity(MEASUREMENT_RUNS);
+    for _ in 0..MEASUREMENT_RUNS {
+        samples.push(run_benchmark(label, operations, &mut *operation));
+    }
+
+    MultiShotResult { label, samples }
+}
+
+fn run_multi_shot<F>(label: &'static str, operations: usize, mut operation: F) -> MultiShotResult
+where
+    F: FnMut(usize),
+{
+    let mut result = collect_samples_static(label, operations, &mut operation);
+
+    for attempt in 1..=MAX_RETRIES {
+        let cv = result.read_coefficient_variation();
+        if cv <= CV_THRESHOLD {
+            return result;
+        }
+        eprintln!(
+            "  [retry {}/{}] CV {:.1}% > {:.0}% for {}, re-running",
+            attempt,
+            MAX_RETRIES,
+            cv * 100.0,
+            CV_THRESHOLD * 100.0,
+            label
+        );
+        result = collect_samples_static(label, operations, &mut operation);
+    }
+
+    let cv = result.read_coefficient_variation();
+    if cv > CV_THRESHOLD {
+        eprintln!(
+            "  MEASUREMENT UNRELIABLE: {} CV {:.1}% > {:.0}% after {} retries",
+            label,
+            cv * 100.0,
+            CV_THRESHOLD * 100.0,
+            MAX_RETRIES
+        );
+    }
+    result
+}
+
+fn run_multi_shot_benchmark<S, T, F>(
+    label: &'static str,
+    operations: usize,
+    mut setup: S,
+    mut operation: F,
+) -> MultiShotResult
+where
+    S: FnMut() -> T,
+    F: FnMut(&T, usize),
+{
+    let mut result = collect_samples(label, operations, &mut setup, &mut operation);
+
+    for attempt in 1..=MAX_RETRIES {
+        let cv = result.read_coefficient_variation();
+        if cv <= CV_THRESHOLD {
+            return result;
+        }
+        eprintln!(
+            "  [retry {}/{}] CV {:.1}% > {:.0}% for {}, re-running",
+            attempt,
+            MAX_RETRIES,
+            cv * 100.0,
+            CV_THRESHOLD * 100.0,
+            label
+        );
+        result = collect_samples(label, operations, &mut setup, &mut operation);
+    }
+
+    let cv = result.read_coefficient_variation();
+    if cv > CV_THRESHOLD {
+        eprintln!(
+            "  MEASUREMENT UNRELIABLE: {} CV {:.1}% > {:.0}% after {} retries",
+            label,
+            cv * 100.0,
+            CV_THRESHOLD * 100.0,
+            MAX_RETRIES
+        );
+    }
+    result
+}
+
 #[test]
 #[ignore]
 fn check_benchmark_transient_write() {
-    let tric = create_tric();
     let value = create_value(128);
     let count = 100_000;
 
-    let result = run_benchmark("transient write (128B value)", count, |index| {
-        let key = create_key(index);
-        tric.write_value(&key, &value);
-    });
+    let result = run_multi_shot_benchmark(
+        "transient write (128B value)",
+        count,
+        create_tric,
+        |tric, index| {
+            let key = create_key(index);
+            tric.write_value(&key, &value);
+        },
+    );
 
     eprintln!("{}", result.render());
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 100_000.0,
+        result.read_median_ops() > 100_000.0,
         "transient write should exceed 100k ops/s"
     );
 }
@@ -100,23 +285,29 @@ fn check_benchmark_transient_write() {
 #[test]
 #[ignore]
 fn check_benchmark_transient_read() {
-    let tric = create_tric();
     let value = create_value(128);
     let count = 100_000;
 
-    for index in 0..count {
-        let key = create_key(index);
-        tric.write_value(&key, &value);
-    }
-
-    let result = run_benchmark("transient read (128B value)", count, |index| {
-        let key = create_key(index);
-        let _ = tric.read_value(&key);
-    });
+    let result = run_multi_shot_benchmark(
+        "transient read (128B value)",
+        count,
+        || {
+            let tric = create_tric();
+            for index in 0..count {
+                let key = create_key(index);
+                tric.write_value(&key, &value);
+            }
+            tric
+        },
+        |tric, index| {
+            let key = create_key(index);
+            let _ = tric.read_value(&key);
+        },
+    );
 
     eprintln!("{}", result.render());
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 100_000.0,
+        result.read_median_ops() > 100_000.0,
         "transient read should exceed 100k ops/s"
     );
 }
@@ -124,23 +315,27 @@ fn check_benchmark_transient_read() {
 #[test]
 #[ignore]
 fn check_benchmark_transient_mixed() {
-    let tric = create_tric();
     let value = create_value(128);
     let count = 100_000;
 
-    let result = run_benchmark("transient mixed 50/50 rw (128B)", count, |index| {
-        let key = create_key(index);
-        if index % 2 == 0 {
-            tric.write_value(&key, &value);
-        } else {
-            let read_key = create_key(index.saturating_sub(1));
-            let _ = tric.read_value(&read_key);
-        }
-    });
+    let result = run_multi_shot_benchmark(
+        "transient mixed 50/50 rw (128B)",
+        count,
+        create_tric,
+        |tric, index| {
+            let key = create_key(index);
+            if index % 2 == 0 {
+                tric.write_value(&key, &value);
+            } else {
+                let read_key = create_key(index.saturating_sub(1));
+                let _ = tric.read_value(&read_key);
+            }
+        },
+    );
 
     eprintln!("{}", result.render());
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 80_000.0,
+        result.read_median_ops() > 80_000.0,
         "transient mixed should exceed 80k ops/s"
     );
 }
@@ -148,45 +343,62 @@ fn check_benchmark_transient_mixed() {
 #[test]
 #[ignore]
 fn check_benchmark_persistent_write() {
-    let (bus, dir) = create_benchmark_bus("pw");
     let value = create_value(128);
     let count = 10_000;
+    let mut last_dir = String::new();
 
-    let result = run_benchmark("persistent write (128B, SQLite)", count, |index| {
-        let key = create_key(index);
-        bus.write_value(&key, &value);
-    });
+    let result = run_multi_shot_benchmark(
+        "persistent write (128B, SQLite)",
+        count,
+        || {
+            let (bus, dir) = create_benchmark_bus("pw");
+            last_dir = dir;
+            bus
+        },
+        |bus, index| {
+            let key = create_key(index);
+            bus.write_value(&key, &value);
+        },
+    );
 
-    let ops = result.operations as f64 / result.duration.as_secs_f64();
     eprintln!("{}", result.render());
-    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&last_dir);
+    let median = result.read_median_ops();
     assert!(
-        ops > 500.0,
-        "persistent write should exceed 500 ops/s (ZFS/WAL): got {ops:.0}"
+        median > 500.0,
+        "persistent write should exceed 500 ops/s (ZFS/WAL): got {median:.0}"
     );
 }
 
 #[test]
 #[ignore]
 fn check_benchmark_persistent_read() {
-    let (bus, dir) = create_benchmark_bus("pr");
     let value = create_value(128);
     let count = 10_000;
+    let mut last_dir = String::new();
 
-    for index in 0..count {
-        let key = create_key(index);
-        bus.write_value(&key, &value);
-    }
-
-    let result = run_benchmark("persistent read (128B, SQLite→cache)", count, |index| {
-        let key = create_key(index);
-        let _ = bus.read_value(&key);
-    });
+    let result = run_multi_shot_benchmark(
+        "persistent read (128B, SQLite→cache)",
+        count,
+        || {
+            let (bus, dir) = create_benchmark_bus("pr");
+            last_dir = dir;
+            for index in 0..count {
+                let key = create_key(index);
+                bus.write_value(&key, &value);
+            }
+            bus
+        },
+        |bus, index| {
+            let key = create_key(index);
+            let _ = bus.read_value(&key);
+        },
+    );
 
     eprintln!("{}", result.render());
-    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&last_dir);
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 5_000.0,
+        result.read_median_ops() > 5_000.0,
         "persistent read should exceed 5k ops/s"
     );
 }
@@ -194,29 +406,36 @@ fn check_benchmark_persistent_read() {
 #[test]
 #[ignore]
 fn check_benchmark_persistent_read_cached() {
-    let (bus, dir) = create_benchmark_bus("prc");
     let value = create_value(128);
     let count = 10_000;
+    let mut last_dir = String::new();
 
-    for index in 0..count {
-        let key = create_key(index);
-        bus.write_value(&key, &value);
-    }
-
-    for index in 0..count {
-        let key = create_key(index);
-        let _ = bus.read_value(&key);
-    }
-
-    let result = run_benchmark("persistent read (cache-promoted)", count, |index| {
-        let key = create_key(index);
-        let _ = bus.read_value(&key);
-    });
+    let result = run_multi_shot_benchmark(
+        "persistent read (cache-promoted)",
+        count,
+        || {
+            let (bus, dir) = create_benchmark_bus("prc");
+            last_dir = dir;
+            for index in 0..count {
+                let key = create_key(index);
+                bus.write_value(&key, &value);
+            }
+            for index in 0..count {
+                let key = create_key(index);
+                let _ = bus.read_value(&key);
+            }
+            bus
+        },
+        |bus, index| {
+            let key = create_key(index);
+            let _ = bus.read_value(&key);
+        },
+    );
 
     eprintln!("{}", result.render());
-    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&last_dir);
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 50_000.0,
+        result.read_median_ops() > 50_000.0,
         "cache-promoted read should exceed 50k ops/s"
     );
 }
@@ -224,22 +443,28 @@ fn check_benchmark_persistent_read_cached() {
 #[test]
 #[ignore]
 fn check_benchmark_scan() {
-    let tric = create_tric();
     let value = create_value(64);
     let count = 10_000;
 
-    for index in 0..count {
-        let key = format!("scan:{index:08}").into_bytes();
-        tric.write_value(&key, &value);
-    }
-
-    let result = run_benchmark("transient scan (10k entries)", 1_000, |_| {
-        let _ = tric.find_by_prefix(b"scan:");
-    });
+    let result = run_multi_shot_benchmark(
+        "transient scan (10k entries)",
+        1_000,
+        || {
+            let tric = create_tric();
+            for index in 0..count {
+                let key = format!("scan:{index:08}").into_bytes();
+                tric.write_value(&key, &value);
+            }
+            tric
+        },
+        |tric, _| {
+            let _ = tric.find_by_prefix(b"scan:");
+        },
+    );
 
     eprintln!("{}", result.render());
     assert!(
-        result.operations as f64 / result.duration.as_secs_f64() > 100.0,
+        result.read_median_ops() > 100.0,
         "full scan of 10k entries should exceed 100 scans/s"
     );
 }
@@ -325,7 +550,7 @@ fn check_benchmark_redis_write() {
     let value = create_value(128);
     let count = 100_000;
 
-    let result = run_benchmark("redis write (128B, TCP localhost)", count, |index| {
+    let result = run_multi_shot("redis write (128B, TCP localhost)", count, |index| {
         let key = create_key(index);
         let _: Result<(), _> = redis::cmd("SET")
             .arg(&key)
@@ -360,7 +585,7 @@ fn check_benchmark_redis_read() {
             .query(&mut connection);
     }
 
-    let result = run_benchmark("redis read (128B, TCP localhost)", count, |index| {
+    let result = run_multi_shot("redis read (128B, TCP localhost)", count, |index| {
         let key = create_key(index);
         let _: Result<Vec<u8>, _> = redis::cmd("GET").arg(&key).query(&mut connection);
     });
@@ -384,7 +609,7 @@ fn check_benchmark_redis_mixed() {
     let value = create_value(128);
     let count = 100_000;
 
-    let result = run_benchmark("redis mixed 50/50 rw (128B, TCP)", count, |index| {
+    let result = run_multi_shot("redis mixed 50/50 rw (128B, TCP)", count, |index| {
         let key = create_key(index);
         if index % 2 == 0 {
             let _: Result<(), _> = redis::cmd("SET")
@@ -428,7 +653,7 @@ fn check_benchmark_tric_server_write() {
     let duration_ms: u64 = 60_000;
     let count = 50_000;
 
-    let result = run_benchmark("tric+ server write (128B, UDS)", count, |index| {
+    let result = run_multi_shot("tric+ server write (128B, UDS)", count, |index| {
         let key = create_key(index);
         let mut datagram = Vec::with_capacity(17 + key.len() + value.len());
         datagram.extend_from_slice(&(index as u32).to_be_bytes());
@@ -490,7 +715,7 @@ fn check_benchmark_tric_server_read() {
         let _ = client.recv(&mut buffer);
     }
 
-    let result = run_benchmark("tric+ server read (128B, UDS)", count, |index| {
+    let result = run_multi_shot("tric+ server read (128B, UDS)", count, |index| {
         let key = create_key(index);
         let mut datagram = Vec::with_capacity(9 + key.len());
         datagram.extend_from_slice(&(index as u32).to_be_bytes());
