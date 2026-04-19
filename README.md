@@ -50,27 +50,27 @@ Three benchmark layers, same machine, same payload, same methodology. Layer 2 (s
 | 1: In-process | Transient read 128B | 4,198,248 | 208ns | 417ns | — |
 | 1: In-process | Cache-promoted read | 3,853,936 | 208ns | 458ns | — |
 | 1: In-process | SQLite write (WAL) | 18,696 | 43.2µs | 178.7µs | — |
-| **2: Server (UDS)** | **Write 128B** | **21,112** | **42.7µs** | **114.4µs** | **1.56x** |
-| **2: Server (UDS)** | **Read 128B** | **30,255** | **31.8µs** | **78.9µs** | 0.79x |
-| 3: Redis (TCP) | Write 128B | 13,515 | 59.2µs | 251.3µs | baseline |
-| 3: Redis (TCP) | Read 128B | 38,476 | 23.7µs | 62.7µs | baseline |
+| **2: Server (UDS)** | **Write 128B** | **16,437** | **54.0µs** | **164.3µs** | **1.33x** |
+| **2: Server (UDS)** | **Read 128B** | **26,962** | **34.6µs** | **93.8µs** | 0.71x |
+| 3: Redis (TCP) | Write 128B | 12,386 | 63.3µs | 268.7µs | baseline |
+| 3: Redis (TCP) | Read 128B | 37,972 | 23.8µs | 63.9µs | baseline |
 
 ### FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)
 
 | Layer | Workload | ops/s | p50 | p99 | vs Redis |
 |-------|----------|------:|----:|----:|---------:|
-| 1: In-process | Transient write 128B | 1,139,079 | 650ns | 3.87µs | — |
-| 1: In-process | Transient read 128B | 1,672,309 | 470ns | 2.12µs | — |
-| 1: In-process | Cache-promoted read | 2,318,271 | 340ns | 1.19µs | — |
-| 1: In-process | SQLite write (WAL/ZFS) | 18,177 | 24.6µs | 75.3µs | — |
-| **2: Server (UDS)** | **Write 128B** | **19,065** | **34.6µs** | **92.8µs** | 0.32x |
-| **2: Server (UDS)** | **Read 128B** | **130,379** | **7.4µs** | **11.6µs** | **1.58x** |
-| 3: Redis (TCP) | Write 128B | 59,063 | 15.6µs | 40.8µs | baseline |
-| 3: Redis (TCP) | Read 128B | 82,633 | 11.4µs | 20.2µs | baseline |
+| 1: In-process | Transient write 128B | 1,078,094 | 660ns | 4.53µs | — |
+| 1: In-process | Transient read 128B | 1,650,737 | 450ns | 3.12µs | — |
+| 1: In-process | Cache-promoted read | 2,241,860 | 360ns | 1.23µs | — |
+| 1: In-process | SQLite write (WAL/ZFS) | 17,477 | 25.3µs | 78.2µs | — |
+| **2: Server (UDS)** | **Write 128B** | **39,920** | **23.7µs** | **45.5µs** | 0.72x |
+| **2: Server (UDS)** | **Read 128B** | **105,590** | **8.6µs** | **16.3µs** | **1.10x** |
+| 3: Redis (TCP) | Write 128B | 55,207 | 16.5µs | 42.9µs | baseline |
+| 3: Redis (TCP) | Read 128B | 96,276 | 10.2µs | 12.0µs | baseline |
 
 **Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures server throughput via UDS DGRAM using opcode `0x02 write_value` with `duration_ms > 0` — one round-trip, transient BTreeMap path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All single-threaded, synchronous, no pipelining, no batching.
 
-Redis' TCP stack on FreeBSD is decades-tuned and wins single-thread writes. TRIC+ wins read-heavy workloads on FreeBSD (1.58x) and write-heavy workloads on macOS (1.56x), and offers something Redis cannot: a permutive tier where keys without TTL live in SQLite for free.
+TRIC+ wins read-heavy workloads on FreeBSD (1.10x) and write-heavy workloads on macOS (1.33x). The other two quadrants favour Redis — its TCP stack on FreeBSD is decades-tuned and macOS UDS lags FreeBSD UDS in the kernel. A dedicated server-hot-path optimisation is queued to push every quadrant past Redis. TRIC+ also offers something Redis cannot: a permutive tier where keys without TTL live in SQLite for free.
 
 ### Reproduce
 
