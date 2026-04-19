@@ -115,6 +115,7 @@ fn run_local_worker(
     metrics: &crate::modules::metrics::Metrics,
 ) {
     let mut buffer = [0u8; MAX_DATAGRAM];
+    let mut send_buffer = Vec::with_capacity(MAX_DATAGRAM);
     loop {
         core_bus.write_ttl(b"module:server", Duration::from_secs(15));
         let (length, peer) = match socket.recv_from(&mut buffer) {
@@ -134,8 +135,8 @@ fn run_local_worker(
         };
         let responses = dispatch_request(&request, data_bus, metrics);
         for response in &responses {
-            let encoded = encode_local(response);
-            let _ = socket.send_to_addr(&encoded, &peer);
+            write_local_to_buffer(&mut send_buffer, response);
+            let _ = socket.send_to_addr(&send_buffer, &peer);
         }
         metrics.record_latency(start);
     }
@@ -173,6 +174,13 @@ fn run_network_worker(
         }
         metrics.record_latency(start);
     }
+}
+
+fn write_local_to_buffer(buffer: &mut Vec<u8>, response: &Response) {
+    buffer.clear();
+    buffer.extend_from_slice(&response.request_id.to_be_bytes());
+    buffer.push(response.opcode);
+    buffer.extend_from_slice(&response.payload);
 }
 
 fn create_error(request_id: u32, opcode: u8) -> Response {
