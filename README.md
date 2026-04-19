@@ -5,7 +5,7 @@
 ![C](https://img.shields.io/badge/C-ready-4caf50?style=flat-square&logo=c)
 ![C++](https://img.shields.io/badge/C++-ready-4caf50?style=flat-square&logo=cplusplus)
 ![Rust](https://img.shields.io/badge/Rust-native-dea584?style=flat-square&logo=rust)
-![Swift](https://img.shields.io/badge/Swift-planned-555555?style=flat-square&logo=swift)
+![Swift](https://img.shields.io/badge/Swift-ready-4caf50?style=flat-square&logo=swift)
 ![Go](https://img.shields.io/badge/Go-planned-555555?style=flat-square&logo=go)
 ![PHP](https://img.shields.io/badge/PHP-planned-555555?style=flat-square&logo=php)
 ![Python](https://img.shields.io/badge/Python-planned-555555?style=flat-square&logo=python)
@@ -35,7 +35,7 @@ Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it live
 - **SQL interface:** `tric query "SELECT * FROM users WHERE key = '42'"`
 - **Import/Export:** SQL dumps (MySQL, PostgreSQL, SQLite), `.tric` Brotli-compressed archives, diff-import
 - **Instance management:** multiple projects with slot-based cloning under `/var/db/tric/`
-- **20 language bridges** planned, 2 ready (C, C++) — C FFI base, then native socket clients for each language
+- **20 language bridges** planned, 3 ready (C, C++, Swift) — C FFI base, then native socket clients for each language
 - **8 CMS/shop integrations** planned (WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco)
 
 ## Performance
@@ -217,7 +217,7 @@ Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram 
 | Wave | Languages | Mechanism | Ready |
 |------|-----------|-----------|-------|
 | 1 | **C** | Shared library (.so/.dylib), FFI base | 1/1 |
-| 2 | **C++**, Swift, Nim, Lua, Tcl, Zig | C FFI consumers | 1/6 |
+| 2 | **C++**, **Swift**, Nim, Lua, Tcl, Zig | C FFI consumers | 2/6 |
 | 3 | PHP, Java, Kotlin, Python, Ruby, C#/.NET, Go | Native socket | 0/7 |
 | 4 | JavaScript, TypeScript, Perl, Elixir, Dart, Rust | Native socket | 0/6 |
 
