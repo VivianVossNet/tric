@@ -16,3 +16,5 @@ bridges/*/tests/bridge_test
 bridges/*/*.o
 bridges/swift/.build/
 bridges/swift/Package.resolved
+bridges/zig/.zig-cache/
+bridges/zig/zig-out/
