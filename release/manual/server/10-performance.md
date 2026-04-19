@@ -66,6 +66,54 @@ This methodology is conservative. Pipelining and batching would increase through
 | 3 | Redis write 128B (TCP) | 55,207 | 16.5µs | 42.9µs |
 | 3 | Redis read 128B (TCP) | 96,276 | 10.2µs | 12.0µs |
 
+## TRIC+-specific workloads
+
+The Layer-1 / 2 / 3 tables above measure single-shot SET / GET — the discipline Redis has been optimised for since 2009. TRIC+'s actual value-add is in workloads that exercise its own architecture: permutive routing, cache-promotion, prefix-scan as a first-class operation, atomic CAS, and concurrent multi-client scaling. The benchmark harness includes five additional tests that quantify these.
+
+### Reference numbers (macOS Apple Silicon, 2026-04-19)
+
+| Workload | TRIC+ ops/s | CV % | Redis ops/s | Δ |
+|----------|------------:|-----:|------------:|--:|
+| Permutive mixed (50/50 TTL/persistent) | 27,520 | 5.2 | — (no analogue) | — |
+| TRIC+ `find_by_prefix` 10k (in-process) | 4,901 | 1.8 | Redis `KEYS` 75 ops/s | **65×** |
+| TRIC+ CAS `delete_if_match` (in-process) | 4,249,096 | 4.9 | Redis Lua EVAL 14,549 ops/s | **292×** |
+| Concurrent 4 threads mixed r/w | 1,748,963 | (single-shot) | — (Redis is single-threaded) | — |
+
+The CAS and prefix-scan ratios above compare in-process TRIC+ against network Redis — that captures the embeddable advantage. A network-vs-network prefix-scan comparison via the TRIC+ server is on the roadmap (Ticket 0029-C may add a Layer-2 wire-protocol scan benchmark).
+
+### Cache-promotion (existing tests, no Redis equivalent)
+
+Two existing benchmarks already characterise this:
+
+- `check_benchmark_persistent_read` — first read of a SQLite-only key. Measures SQLite hit + automatic BTreeMap promotion.
+- `check_benchmark_persistent_read_cached` — repeat reads of the same key. Measures the BTreeMap warm hit after promotion.
+
+The ratio between the two is TRIC+'s automatic-cache speed-up; Redis has no integrated equivalent (it would require an application-managed L1 in front of a separate persistent store).
+
+### Permutive mixed workload
+
+`check_benchmark_mixed_workload` — interleaved 50/50 transient (`write_value_with_ttl`) and persistent (`write_value`) writes via the PermutiveBus. Demonstrates that the routing decision is per-write — same API, two storage tiers, no caller orchestration. Redis has no analogue; you would need two separate stores.
+
+### Prefix-scan vs Redis `KEYS`
+
+`check_benchmark_scan` (existing, Layer 1) — TRIC+ `find_by_prefix` over 10 k entries via the BTreeMap range. Production-safe.
+
+`check_benchmark_redis_keys` (new, Layer 3) — Redis `KEYS scan:*` over 10 k entries via TCP. Documented as production-unsafe in the Redis manual (blocks the server during the scan); included for completeness.
+
+The interesting comparison is not the raw ops/s — the in-process TRIC+ test always wins by 100×+ on transport alone — but the operational property: TRIC+'s scan is a normal request that does not block other operations on the BTreeMap (range queries do not take exclusive locks beyond the snapshot they observe), while `KEYS` does block Redis.
+
+### CAS atomic claim-job
+
+`check_benchmark_cas_tric` (new) — TRIC+ `delete_value_if_match` (compare-and-delete) in a claim-job loop. Atomic, no scripting language required.
+
+`check_benchmark_cas_redis` (new) — Redis Lua `EVAL` script for the same compare-and-delete semantic. Atomic, but requires script interpretation per call.
+
+### Concurrent multi-client mixed workload
+
+`check_benchmark_concurrent_clients` (new) — 4 threads × 25 000 operations, each thread interleaving 50/50 reads and writes against a shared `Tric` (cloned `Arc<RwLock<Store>>`). Different from the existing `check_benchmark_concurrent_write` which measures only contended writes.
+
+This test characterises the read-path concurrency under contention — relevant for the optimistic-read-then-upgrade lever in Ticket 0029-C (see `concept/knowledge/performance.md` §K0074).
+
 ## Interpreting the layers
 
 **Layer 1 vs Layer 3** shows the architectural advantage of in-process storage over a network-based database. Use this when TRIC+ is embedded as a library: 60–200x faster than any network KV-store.

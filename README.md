@@ -70,6 +70,8 @@ Three benchmark layers, same machine, same payload, same methodology. Layer 2 (s
 
 **Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures server throughput via UDS DGRAM using opcode `0x02 write_value` with `duration_ms > 0` — one round-trip, transient BTreeMap path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All single-threaded, synchronous, no pipelining, no batching.
 
+The single-shot SET/GET above is Redis' home discipline. TRIC+'s own architectural strengths — permutive routing (TTL = transient, no TTL = persistent, one API), cache-promotion, prefix-scan as a first-class operation, atomic CAS without scripting, concurrent multi-client mixed workloads — are characterised in [`release/manual/server/10-performance.md`](release/manual/server/10-performance.md) §TRIC+-specific workloads.
+
 TRIC+ wins read-heavy workloads on FreeBSD (1.10x) and write-heavy workloads on macOS (1.33x). The other two quadrants favour Redis — its TCP stack on FreeBSD is decades-tuned and macOS UDS lags FreeBSD UDS in the kernel. A dedicated server-hot-path optimisation is queued to push every quadrant past Redis. TRIC+ also offers something Redis cannot: a permutive tier where keys without TTL live in SQLite for free.
 
 ### Reproduce

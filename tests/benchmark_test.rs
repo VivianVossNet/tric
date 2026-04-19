@@ -730,3 +730,200 @@ fn check_benchmark_tric_server_read() {
     let _ = std::fs::remove_file(&client_path);
     eprintln!("{}", result.render());
 }
+
+#[test]
+#[ignore]
+fn check_benchmark_mixed_workload() {
+    let value = create_value(128);
+    let count = 10_000;
+    let mut last_dir = String::new();
+
+    let result = run_multi_shot_benchmark(
+        "permutive mixed 50/50 ttl/persistent",
+        count,
+        || {
+            let (bus, dir) = create_benchmark_bus("mw");
+            last_dir = dir;
+            bus
+        },
+        |bus, index| {
+            let key = create_key(index);
+            if index % 2 == 0 {
+                bus.write_value_with_ttl(&key, &value, Duration::from_secs(60));
+            } else {
+                bus.write_value(&key, &value);
+            }
+        },
+    );
+
+    eprintln!("{}", result.render());
+    let _ = std::fs::remove_dir_all(&last_dir);
+    assert!(
+        result.read_median_ops() > 5_000.0,
+        "permutive mixed should exceed 5k ops/s (half the writes go to SQLite)"
+    );
+}
+
+#[test]
+#[ignore]
+fn check_benchmark_redis_keys() {
+    let Ok(client) = redis::Client::open(
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string()),
+    ) else {
+        eprintln!("  SKIP: Redis not available on 127.0.0.1:6379");
+        return;
+    };
+    let Ok(mut connection) = client.get_connection() else {
+        eprintln!("  SKIP: Redis not running on 127.0.0.1:6379");
+        return;
+    };
+    let value = create_value(64);
+    let key_count = 10_000;
+
+    for index in 0..key_count {
+        let key = format!("scan:{index:08}");
+        let _: Result<(), _> = redis::cmd("SET")
+            .arg(&key)
+            .arg(&value)
+            .query(&mut connection);
+    }
+
+    let result = run_multi_shot("redis KEYS scan:* (10k entries)", 100, |_| {
+        let _: Result<Vec<String>, _> = redis::cmd("KEYS").arg("scan:*").query(&mut connection);
+    });
+
+    eprintln!("{}", result.render());
+
+    let _: Result<(), _> = redis::cmd("DEL")
+        .arg(
+            (0..key_count)
+                .map(|index| format!("scan:{index:08}"))
+                .collect::<Vec<_>>(),
+        )
+        .query(&mut connection);
+}
+
+#[test]
+#[ignore]
+fn check_benchmark_cas_tric() {
+    let value = create_value(128);
+    let count = 50_000;
+
+    let result = run_multi_shot_benchmark(
+        "tric cas claim-job (delete_if_match)",
+        count,
+        || {
+            let tric = create_tric();
+            for index in 0..count {
+                let key = format!("job:{index:08}").into_bytes();
+                tric.write_value(&key, &value);
+            }
+            tric
+        },
+        |tric, index| {
+            let key = format!("job:{index:08}").into_bytes();
+            let _ = tric.delete_value_if_match(&key, &value);
+        },
+    );
+
+    eprintln!("{}", result.render());
+    assert!(
+        result.read_median_ops() > 100_000.0,
+        "tric CAS should exceed 100k ops/s (in-process, no transport)"
+    );
+}
+
+#[test]
+#[ignore]
+fn check_benchmark_cas_redis() {
+    let Ok(client) = redis::Client::open(
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string()),
+    ) else {
+        eprintln!("  SKIP: Redis not available on 127.0.0.1:6379");
+        return;
+    };
+    let Ok(mut connection) = client.get_connection() else {
+        eprintln!("  SKIP: Redis not running on 127.0.0.1:6379");
+        return;
+    };
+    let value = create_value(128);
+    let count = 20_000;
+    let cas_script = "if redis.call('GET', KEYS[1]) == ARGV[1] then \
+                      redis.call('DEL', KEYS[1]); return 1 else return 0 end";
+
+    for index in 0..count {
+        let key = format!("job:{index:08}");
+        let _: Result<(), _> = redis::cmd("SET")
+            .arg(&key)
+            .arg(&value)
+            .query(&mut connection);
+    }
+
+    let result = run_multi_shot("redis cas claim-job (Lua EVAL, TCP)", count, |index| {
+        let key = format!("job:{index:08}");
+        let _: Result<i64, _> = redis::cmd("EVAL")
+            .arg(cas_script)
+            .arg(1)
+            .arg(&key)
+            .arg(&value)
+            .query(&mut connection);
+    });
+
+    eprintln!("{}", result.render());
+}
+
+#[test]
+#[ignore]
+fn check_benchmark_concurrent_clients() {
+    let tric = create_tric();
+    let value = create_value(128);
+    let preload_count = 1_000;
+    let thread_count = 4;
+    let operations_per_thread = 25_000;
+
+    for index in 0..preload_count {
+        let key = create_key(index);
+        tric.write_value(&key, &value);
+    }
+
+    let start = Instant::now();
+    let mut handles = Vec::new();
+
+    for thread_id in 0..thread_count {
+        let tric = tric.clone();
+        let value = value.clone();
+        handles.push(std::thread::spawn(move || {
+            for index in 0..operations_per_thread {
+                if index % 2 == 0 {
+                    let key = format!("client:{thread_id}:{index:08}").into_bytes();
+                    tric.write_value(&key, &value);
+                } else {
+                    let read_key = create_key(index % preload_count);
+                    let _ = tric.read_value(&read_key);
+                }
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let duration = start.elapsed();
+    let total_ops = thread_count * operations_per_thread;
+    let ops_per_second = total_ops as f64 / duration.as_secs_f64();
+
+    eprintln!(
+        "  {:<40} {:>10.0} ops/s  ({} threads × {} mixed r/w in {:?})",
+        "concurrent clients (4 threads, mixed)",
+        ops_per_second,
+        thread_count,
+        operations_per_thread,
+        duration
+    );
+
+    assert!(
+        ops_per_second > 50_000.0,
+        "concurrent clients should exceed 50k ops/s total"
+    );
+}
