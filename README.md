@@ -7,7 +7,7 @@
 ![Swift](https://img.shields.io/badge/Swift-ready-4caf50?style=flat-square&logo=swift)
 ![Nim](https://img.shields.io/badge/Nim-ready-4caf50?style=flat-square&logo=nim)
 ![Lua](https://img.shields.io/badge/Lua-planned-555555?style=flat-square&logo=lua)
-![Tcl](https://img.shields.io/badge/Tcl-planned-555555?style=flat-square)
+![Tcl](https://img.shields.io/badge/Tcl-ready-4caf50?style=flat-square)
 ![Zig](https://img.shields.io/badge/Zig-ready-4caf50?style=flat-square&logo=zig)
 ![PHP](https://img.shields.io/badge/PHP-planned-555555?style=flat-square&logo=php)
 ![Java](https://img.shields.io/badge/Java-planned-555555?style=flat-square&logo=openjdk)
@@ -35,7 +35,7 @@ Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it live
 - **SQL interface:** `tric query "SELECT * FROM users WHERE key = '42'"`
 - **Import/Export:** SQL dumps (MySQL, PostgreSQL, SQLite), `.tric` Brotli-compressed archives, diff-import
 - **Instance management:** multiple projects with slot-based cloning under `/var/db/tric/`
-- **20 language bridges** planned, 5 ready (C, C++, Swift, Nim, Zig) — C FFI base, then native socket clients for each language
+- **20 language bridges** planned, 6 ready (C, C++, Swift, Nim, Tcl, Zig) — C FFI base, then native socket clients for each language
 - **8 CMS/shop integrations** planned (WordPress, Drupal, Craft CMS, WooCommerce, Magento, Shopify, PrestaShop, Umbraco)
 
 ## Performance
@@ -202,7 +202,7 @@ Binary protocol over UDS DGRAM (local) and UDP (network). Each network datagram 
 | Wave | Languages | Mechanism | Ready |
 |------|-----------|-----------|-------|
 | 1 | **C** | Shared library (.so/.dylib), FFI base | 1/1 |
-| 2 | **C++**, **Swift**, **Nim**, Lua, Tcl, **Zig** | C FFI consumers | 4/6 |
+| 2 | **C++**, **Swift**, **Nim**, Lua, **Tcl**, **Zig** | C FFI consumers | 5/6 |
 | 3 | PHP, Java, Kotlin, Python, Ruby, C#/.NET, Go | Native socket | 0/7 |
 | 4 | JavaScript, TypeScript, Perl, Elixir, Dart, Rust | Native socket | 0/6 |
 

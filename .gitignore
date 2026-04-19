@@ -21,3 +21,5 @@ bridges/zig/zig-out/
 bridges/nim/.nimbuild/
 bridges/nim/nimcache/
 bridges/nim/tests/bridge_test
+bridges/tcl/libtric_tcl.dylib
+bridges/tcl/libtric_tcl.so

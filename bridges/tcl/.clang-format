@@ -1,0 +1,27 @@
+# TRIC+ house style — C bridge.
+# PointerAlignment: Right matches the C idiom (int *p) used throughout the code.
+
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+DerivePointerAlignment: false
+SpacesBeforeTrailingComments: 1
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+IndentCaseLabels: true
+AlignConsecutiveDeclarations: false
+AlignConsecutiveAssignments: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+SortIncludes: false
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+...
