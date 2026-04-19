@@ -93,7 +93,7 @@ fn send_admin(command: &str) -> String {
     String::from_utf8_lossy(&buffer[..length]).to_string()
 }
 
-fn build_write_value(request_id: u32, key: &[u8], value: &[u8]) -> Vec<u8> {
+fn build_write_value(request_id: u32, key: &[u8], value: &[u8], duration_ms: u64) -> Vec<u8> {
     let mut datagram = Vec::new();
     datagram.extend_from_slice(&request_id.to_be_bytes());
     datagram.push(0x02);
@@ -101,6 +101,7 @@ fn build_write_value(request_id: u32, key: &[u8], value: &[u8]) -> Vec<u8> {
     datagram.extend_from_slice(key);
     datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
     datagram.extend_from_slice(value);
+    datagram.extend_from_slice(&duration_ms.to_be_bytes());
     datagram
 }
 
@@ -242,7 +243,7 @@ fn check_full_server_integration() {
     check_opcode_inspect();
     check_opcode_reload();
     check_opcode_restore_and_dump();
-    check_opcode_write_value_with_ttl();
+    check_opcode_write_value_with_duration();
     check_diff_import();
     check_persistence_write_before_restart();
 
@@ -262,7 +263,7 @@ fn check_ping_response() {
 }
 
 fn check_write_and_read_value() {
-    let response = send_datagram(&build_write_value(10, b"user:42", b"Alice"));
+    let response = send_datagram(&build_write_value(10, b"user:42", b"Alice", 0));
     check_response_opcode(&response, 0x80);
 
     let response = send_datagram(&build_read_value(11, b"user:42"));
@@ -274,7 +275,7 @@ fn check_write_and_read_value() {
 }
 
 fn check_delete_value() {
-    send_datagram(&build_write_value(20, b"temp:key", b"temporary"));
+    send_datagram(&build_write_value(20, b"temp:key", b"temporary", 0));
     let response = send_datagram(&build_read_value(21, b"temp:key"));
     check_response_opcode(&response, 0x81);
 
@@ -284,9 +285,9 @@ fn check_delete_value() {
 }
 
 fn check_find_by_prefix() {
-    send_datagram(&build_write_value(30, b"product:1", b"Widget"));
-    send_datagram(&build_write_value(31, b"product:2", b"Gadget"));
-    send_datagram(&build_write_value(32, b"other:x", b"ignored"));
+    send_datagram(&build_write_value(30, b"product:1", b"Widget", 0));
+    send_datagram(&build_write_value(31, b"product:2", b"Gadget", 0));
+    send_datagram(&build_write_value(32, b"other:x", b"ignored", 0));
 
     let response = send_datagram(&build_find_by_prefix(33, b"product:"));
     check_response_opcode(&response, 0x90);
@@ -608,9 +609,9 @@ fn check_opcode_restore_and_dump() {
 }
 
 fn check_diff_import() {
-    send_datagram(&build_write_value(90, b"diff:alpha", b"one"));
-    send_datagram(&build_write_value(91, b"diff:beta", b"two"));
-    send_datagram(&build_write_value(92, b"diff:gamma", b"three"));
+    send_datagram(&build_write_value(90, b"diff:alpha", b"one", 0));
+    send_datagram(&build_write_value(91, b"diff:beta", b"two", 0));
+    send_datagram(&build_write_value(92, b"diff:gamma", b"three", 0));
 
     let old_path = format!("{SOCKET_DIR}/diff-old.tric");
     let response = send_admin(&format!("export -f {old_path} --debug"));
@@ -619,8 +620,8 @@ fn check_diff_import() {
         "old export should succeed: {response}"
     );
 
-    send_datagram(&build_write_value(93, b"diff:beta", b"CHANGED"));
-    send_datagram(&build_write_value(94, b"diff:delta", b"four"));
+    send_datagram(&build_write_value(93, b"diff:beta", b"CHANGED", 0));
+    send_datagram(&build_write_value(94, b"diff:delta", b"four", 0));
     send_datagram(&build_delete_value(95, b"diff:gamma"));
 
     let new_path = format!("{SOCKET_DIR}/diff-new.tric");
@@ -675,25 +676,8 @@ fn build_write_ttl(request_id: u32, key: &[u8], duration_ms: u64) -> Vec<u8> {
     datagram
 }
 
-fn build_write_value_with_ttl(
-    request_id: u32,
-    key: &[u8],
-    value: &[u8],
-    duration_ms: u64,
-) -> Vec<u8> {
-    let mut datagram = Vec::new();
-    datagram.extend_from_slice(&request_id.to_be_bytes());
-    datagram.push(0x08);
-    datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
-    datagram.extend_from_slice(key);
-    datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
-    datagram.extend_from_slice(value);
-    datagram.extend_from_slice(&duration_ms.to_be_bytes());
-    datagram
-}
-
-fn check_opcode_write_value_with_ttl() {
-    let response = send_datagram(&build_write_value_with_ttl(
+fn check_opcode_write_value_with_duration() {
+    let response = send_datagram(&build_write_value(
         85,
         b"cache:session",
         b"token-abc",
@@ -708,7 +692,7 @@ fn check_opcode_write_value_with_ttl() {
     let value = &response[9..9 + value_len];
     assert_eq!(
         value, b"token-abc",
-        "0x08 should write a value readable via 0x01"
+        "0x02 with duration_ms > 0 should write a value readable via 0x01"
     );
 
     let response = send_datagram(&build_inspect(87, b"cache:session"));
@@ -728,7 +712,7 @@ fn check_opcode_write_value_with_ttl() {
     ]);
     assert!(
         ttl_ms > 0,
-        "0x08 should install a TTL; INSPECT returned 0 ms"
+        "0x02 with duration_ms > 0 should install a TTL; INSPECT returned 0 ms"
     );
     assert!(
         ttl_ms <= 60_000,
@@ -737,10 +721,10 @@ fn check_opcode_write_value_with_ttl() {
 }
 
 fn check_persistence_write_before_restart() {
-    let response = send_datagram(&build_write_value(200, b"persist:user", b"Alice"));
+    let response = send_datagram(&build_write_value(200, b"persist:user", b"Alice", 0));
     check_response_opcode(&response, 0x80);
 
-    let response = send_datagram(&build_write_value(201, b"persist:config", b"dark-mode"));
+    let response = send_datagram(&build_write_value(201, b"persist:config", b"dark-mode", 0));
     check_response_opcode(&response, 0x80);
 
     let sql_path = format!("{SOCKET_DIR}/persist-import.sql");
@@ -756,7 +740,12 @@ fn check_persistence_write_before_restart() {
         "pre-restart import should succeed: {response}"
     );
 
-    let response = send_datagram(&build_write_value(202, b"volatile:session", b"token-xyz"));
+    let response = send_datagram(&build_write_value(
+        202,
+        b"volatile:session",
+        b"token-xyz",
+        0,
+    ));
     check_response_opcode(&response, 0x80);
     let response = send_datagram(&build_write_ttl(203, b"volatile:session", 300_000));
     check_response_opcode(&response, 0x80);

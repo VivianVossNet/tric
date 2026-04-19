@@ -68,7 +68,7 @@ Three benchmark layers, same machine, same payload, same methodology. Layer 2 (s
 | 3: Redis (TCP) | Write 128B | 59,063 | 15.6µs | 40.8µs | baseline |
 | 3: Redis (TCP) | Read 128B | 82,633 | 11.4µs | 20.2µs | baseline |
 
-**Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures server throughput via UDS DGRAM using opcode `0x08 write_value_with_ttl` — one round-trip, transient BTreeMap path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All single-threaded, synchronous, no pipelining, no batching.
+**Layer 1** measures raw engine speed (in-process, no transport). **Layer 2** measures server throughput via UDS DGRAM using opcode `0x02 write_value` with `duration_ms > 0` — one round-trip, transient BTreeMap path, directly comparable to Redis' `SET k v EX t`. **Layer 3** measures Redis via TCP localhost. All single-threaded, synchronous, no pipelining, no batching.
 
 Redis' TCP stack on FreeBSD is decades-tuned and wins single-thread writes. TRIC+ wins read-heavy workloads on FreeBSD (1.58x) and write-heavy workloads on macOS (1.56x), and offers something Redis cannot: a permutive tier where keys without TTL live in SQLite for free.
 

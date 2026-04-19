@@ -48,13 +48,12 @@ The `request_id` (u32, big-endian) correlates requests with responses. The clien
 | Opcode | Name | Request fields | Response |
 |--------|------|----------------|----------|
 | `0x01` | read_value | `[key_len][key]` | Found: `0x81 [value_len][value]`. Not found: `0x80`. |
-| `0x02` | write_value | `[key_len][key][value_len][value]` | `0x80` |
+| `0x02` | write_value | `[key_len][key][value_len][value][duration_ms u64 BE]` | `0x80` |
 | `0x03` | delete_value | `[key_len][key]` | `0x80` |
 | `0x04` | delete_value_if_match | `[key_len][key][expected_len][expected]` | Deleted: `0x81 [0x01]`. Not deleted: `0x81 [0x00]`. |
 | `0x05` | write_ttl | `[key_len][key][duration_ms u64 BE]` | `0x80` |
 | `0x06` | find_by_prefix | `[prefix_len][prefix]` | Stream of `0x90` chunks + `0x91` end. |
 | `0x07` | query | `[sql_len][sql]` | Varies by SQL statement. See [SQL Interface](06-sql-interface.md). |
-| `0x08` | write_value_with_ttl | `[key_len][key][value_len][value][duration_ms u64 BE]` | `0x80` |
 
 ### Control and admin (client → server)
 
@@ -90,21 +89,20 @@ The `request_id` (u32, big-endian) correlates requests with responses. The clien
 
 ## Write paths at a glance
 
-TRIC+ exposes three distinct write opcodes. Pick by lifetime, not by habit.
+TRIC+ has one write opcode. The trailing `duration_ms` field decides the storage tier — that is the routing signal of K0051 expressed at the wire boundary.
 
-| Opcode | Semantics | Storage tier | Use for |
-|--------|-----------|--------------|---------|
-| `0x02` write_value | Write without TTL | Persistent (SQLite) | Long-lived keys, imported tables, configuration |
-| `0x05` write_ttl | Attach TTL to an existing key | Transient (BTreeMap) — promotes persistent if needed | Adding expiry to a pre-existing value |
-| `0x08` write_value_with_ttl | Atomic write + TTL | Transient (BTreeMap) | Sessions, caches, any short-lived entry — the `SET k v EX t` equivalent |
+| Field value | Storage tier | Semantics | Use for |
+|-------------|--------------|-----------|---------|
+| `duration_ms = 0` | Persistent (SQLite) | Long-lived write, no expiry | Configuration, imported tables, anything that must survive restart |
+| `duration_ms > 0` | Transient (BTreeMap) | Atomic write + TTL in milliseconds | Sessions, caches, the `SET k v EX t` equivalent |
 
-`0x08` exists because the combination `0x02 + 0x05` costs two round-trips plus an fsync cycle for what is semantically one operation.
+`0x05 write_ttl` is the complement: it updates the TTL of a key that already exists, and (in PermutiveBus) promotes a persistent row to the transient tier. Use it when you wrote a value first and now want to attach or extend an expiry.
 
 ## Worked example
 
 Write `user:42` = `alice` via local UDS, then read it back.
 
-### Write request
+### Write request (persistent — no TTL)
 
 ```
 00 00 00 01                   request_id: 1
@@ -113,9 +111,26 @@ Write `user:42` = `alice` via local UDS, then read it back.
 75 73 65 72 3a 34 32          key: "user:42"
 00 00 00 05                   value length: 5
 61 6c 69 63 65                value: "alice"
+00 00 00 00 00 00 00 00       duration_ms: 0 (persistent → SQLite)
 ```
 
-Total: 21 bytes.
+Total: 29 bytes.
+
+### Write request (transient — with TTL)
+
+Same shape, with a non-zero duration:
+
+```
+00 00 00 01                   request_id: 1
+02                            opcode: write_value
+00 00 00 0a                   key length: 10
+73 65 73 73 69 6f 6e 3a 61 62 key: "session:ab"
+00 00 00 05                   value length: 5
+74 6f 6b 65 6e                value: "token"
+00 00 00 00 00 00 0e 10       duration_ms: 3600 (3.6 s, transient → BTreeMap)
+```
+
+Total: 32 bytes.
 
 ### Write response
 

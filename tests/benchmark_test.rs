@@ -432,7 +432,7 @@ fn check_benchmark_tric_server_write() {
         let key = create_key(index);
         let mut datagram = Vec::with_capacity(17 + key.len() + value.len());
         datagram.extend_from_slice(&(index as u32).to_be_bytes());
-        datagram.push(0x08);
+        datagram.push(0x02);
         datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
         datagram.extend_from_slice(&key);
         datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());
@@ -479,7 +479,7 @@ fn check_benchmark_tric_server_read() {
         let key = create_key(index);
         let mut datagram = Vec::with_capacity(17 + key.len() + value.len());
         datagram.extend_from_slice(&(index as u32).to_be_bytes());
-        datagram.push(0x08);
+        datagram.push(0x02);
         datagram.extend_from_slice(&(key.len() as u32).to_be_bytes());
         datagram.extend_from_slice(&key);
         datagram.extend_from_slice(&(value.len() as u32).to_be_bytes());

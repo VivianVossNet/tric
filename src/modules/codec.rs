@@ -110,7 +110,8 @@ pub fn encode_network(
 fn extract_real_payload(opcode: u8, after_opcode: &[u8]) -> Vec<u8> {
     let consumed = match opcode {
         0x01 | 0x03 => read_one_field_length(after_opcode),
-        0x02 | 0x04 => read_two_field_lengths(after_opcode),
+        0x02 => read_two_field_lengths_plus_u64(after_opcode),
+        0x04 => read_two_field_lengths(after_opcode),
         0x05 => read_one_field_length_plus_u64(after_opcode),
         0x06 => read_one_field_length(after_opcode),
         0x13 => Some(0),
@@ -149,4 +150,9 @@ fn read_two_field_lengths(data: &[u8]) -> Option<usize> {
 fn read_one_field_length_plus_u64(data: &[u8]) -> Option<usize> {
     let first = read_one_field_length(data)?;
     Some(first + 8)
+}
+
+fn read_two_field_lengths_plus_u64(data: &[u8]) -> Option<usize> {
+    let two_fields = read_two_field_lengths(data)?;
+    Some(two_fields + 8)
 }

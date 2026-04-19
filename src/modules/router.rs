@@ -29,7 +29,6 @@ pub fn dispatch_request(
         0x05 => vec![write_ttl(request, data_bus)],
         0x06 => find_by_prefix(request, data_bus),
         0x07 => dispatch_query(request, data_bus),
-        0x08 => vec![write_value_with_ttl(request, data_bus)],
         0x13 => vec![create_ok(request.request_id)],
         0x14 => vec![read_status(request, metrics)],
         0x15 => vec![parse_shutdown(request)],
@@ -65,10 +64,27 @@ fn write_value(request: &Request, data_bus: &Arc<dyn DataBus>) -> Response {
     let Some((key, offset)) = read_field_with_offset(&request.payload, 0) else {
         return create_error(request.request_id, ERROR_MALFORMED);
     };
-    let Some(value) = read_field(&request.payload, offset) else {
+    let Some((value, offset)) = read_field_with_offset(&request.payload, offset) else {
         return create_error(request.request_id, ERROR_MALFORMED);
     };
-    data_bus.write_value(key, value);
+    if request.payload.len() < offset + 8 {
+        return create_error(request.request_id, ERROR_MALFORMED);
+    }
+    let duration_ms = u64::from_be_bytes([
+        request.payload[offset],
+        request.payload[offset + 1],
+        request.payload[offset + 2],
+        request.payload[offset + 3],
+        request.payload[offset + 4],
+        request.payload[offset + 5],
+        request.payload[offset + 6],
+        request.payload[offset + 7],
+    ]);
+    if duration_ms == 0 {
+        data_bus.write_value(key, value);
+    } else {
+        data_bus.write_value_with_ttl(key, value, Duration::from_millis(duration_ms));
+    }
     create_ok(request.request_id)
 }
 
@@ -113,30 +129,6 @@ fn write_ttl(request: &Request, data_bus: &Arc<dyn DataBus>) -> Response {
         request.payload[offset + 7],
     ]);
     data_bus.write_ttl(key, Duration::from_millis(duration_ms));
-    create_ok(request.request_id)
-}
-
-fn write_value_with_ttl(request: &Request, data_bus: &Arc<dyn DataBus>) -> Response {
-    let Some((key, offset)) = read_field_with_offset(&request.payload, 0) else {
-        return create_error(request.request_id, ERROR_MALFORMED);
-    };
-    let Some((value, offset)) = read_field_with_offset(&request.payload, offset) else {
-        return create_error(request.request_id, ERROR_MALFORMED);
-    };
-    if request.payload.len() < offset + 8 {
-        return create_error(request.request_id, ERROR_MALFORMED);
-    }
-    let duration_ms = u64::from_be_bytes([
-        request.payload[offset],
-        request.payload[offset + 1],
-        request.payload[offset + 2],
-        request.payload[offset + 3],
-        request.payload[offset + 4],
-        request.payload[offset + 5],
-        request.payload[offset + 6],
-        request.payload[offset + 7],
-    ]);
-    data_bus.write_value_with_ttl(key, value, Duration::from_millis(duration_ms));
     create_ok(request.request_id)
 }
 
