@@ -33,12 +33,16 @@ impl Module for CliModule {
 
     fn run(&self, context: ModuleContext) {
         let _ = std::fs::remove_file(&self.config.admin_path);
-        let socket = UnixDatagram::bind(&self.config.admin_path).unwrap_or_else(|error| {
-            panic!(
-                "failed to bind admin socket {}: {error}",
-                self.config.admin_path
-            )
-        });
+        let socket = match UnixDatagram::bind(&self.config.admin_path) {
+            Ok(socket) => socket,
+            Err(error) => {
+                eprintln!(
+                    "tric: cannot bind admin socket {}: {error}",
+                    self.config.admin_path
+                );
+                std::process::exit(1);
+            }
+        };
 
         let core_bus = context.core_bus.clone();
         let module_key = b"module:cli";
@@ -66,22 +70,22 @@ impl CliModule {
         let verb = parts.next().unwrap_or("");
 
         match verb {
-            "status" => self.format_status(),
-            "keys" => format_keys(parts, data_bus),
-            "inspect" => format_inspect(parts, data_bus),
-            "import" => format_import(parts, data_bus),
-            "query" => format_query(parts, data_bus),
-            "export" => format_export(parts, data_bus),
-            "dump" => format_dump(parts, data_bus),
-            "restore" => format_restore(parts, data_bus),
-            "reload" => self.format_reload(),
-            "shutdown" => format_shutdown(),
-            "help" => format_help(),
+            "status" => self.render_status(),
+            "keys" => render_keys(parts, data_bus),
+            "inspect" => render_inspect(parts, data_bus),
+            "import" => render_import(parts, data_bus),
+            "query" => render_query(parts, data_bus),
+            "export" => render_export(parts, data_bus),
+            "dump" => render_dump(parts, data_bus),
+            "restore" => render_restore(parts, data_bus),
+            "reload" => self.render_reload(),
+            "shutdown" => render_shutdown(),
+            "help" => render_help(),
             _ => format!("error: unknown command '{verb}'\n"),
         }
     }
 
-    fn format_status(&self) -> String {
+    fn render_status(&self) -> String {
         format!(
             "tric-server\n  requests  {} total {} local {} network\n  errors    {}\n  sessions  {}\n  latency   {}us avg {}us max\n",
             self.metrics.read_requests_total(),
@@ -94,7 +98,7 @@ impl CliModule {
         )
     }
 
-    fn format_reload(&self) -> String {
+    fn render_reload(&self) -> String {
         match &self.config.auth_keys_path {
             Some(path) => {
                 crate::modules::logger::log_info("reload; source=authorized_keys trigger=admin");
@@ -105,7 +109,7 @@ impl CliModule {
     }
 }
 
-fn format_keys(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_keys(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let prefix = match parts.next() {
         Some("-p") => parts.next().unwrap_or("").as_bytes(),
         _ => b"",
@@ -125,7 +129,7 @@ fn format_keys(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>
     output
 }
 
-fn format_inspect(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_inspect(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let Some(key_str) = parts.next() else {
         return "usage: inspect <key>\n".to_string();
     };
@@ -145,7 +149,7 @@ fn format_inspect(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
     }
 }
 
-fn format_dump(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_dump(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let flag = parts.next();
     let path = parts.next();
     let Some(("-f", path)) = flag.zip(path) else {
@@ -177,7 +181,7 @@ fn format_dump(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>
     format!("{count} entries  {bytes_written}B  written to {path}\n")
 }
 
-fn format_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let flag = parts.next();
     let path = parts.next();
     let Some(("-f", path)) = flag.zip(path) else {
@@ -238,7 +242,7 @@ fn format_restore(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataB
     format!("{count} entries restored from {path}\n")
 }
 
-fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let flag_f = parts.next();
 
     if flag_f == Some("-D") || flag_f == Some("--diff") {
@@ -247,7 +251,7 @@ fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
         let Some((old_path, new_path)) = old_path.zip(new_path) else {
             return "usage: import -D <old.tric> <new.tric>\n".to_string();
         };
-        return format_diff_import(old_path, new_path, data_bus);
+        return render_diff_import(old_path, new_path, data_bus);
     }
 
     let path = parts.next();
@@ -281,17 +285,17 @@ fn format_import(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
     let plan = crate::modules::analyser::analyse_statements(&statements);
 
     if analyse_only {
-        return crate::modules::analyser::format_storage_plan(&plan);
+        return crate::modules::analyser::render_storage_plan(&plan);
     }
 
-    let result = crate::modules::import::execute_import(&statements, &plan, data_bus);
+    let result = crate::modules::import::parse_import(&statements, &plan, data_bus);
     format!(
         "{} tables, {} rows, {} relationships imported. {} errors.\n",
         result.tables, result.rows, result.relationships, result.errors
     )
 }
 
-fn format_diff_import(old_path: &str, new_path: &str, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_diff_import(old_path: &str, new_path: &str, data_bus: &Arc<dyn DataBus>) -> String {
     let max_file_size: u64 = 1_073_741_824;
     for path in [old_path, new_path] {
         match std::fs::metadata(path) {
@@ -312,7 +316,7 @@ fn format_diff_import(old_path: &str, new_path: &str, data_bus: &Arc<dyn DataBus
     }
 }
 
-fn format_query(parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_query(parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let sql: String = parts.collect::<Vec<&str>>().join(" ");
     if sql.is_empty() {
         return "usage: query <SQL statement>\n".to_string();
@@ -398,7 +402,7 @@ fn parse_scan_value(data: &[u8]) -> Option<&[u8]> {
     }
 }
 
-fn format_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
+fn render_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBus>) -> String {
     let flag_f = parts.next();
     let path = parts.next();
     let Some(("-f", path)) = flag_f.zip(path) else {
@@ -417,12 +421,12 @@ fn format_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
     }
 
     if let Some(dialect) = sql_format {
-        match crate::modules::export::export_sql(data_bus, path, dialect) {
+        match crate::modules::export::write_sql_file(data_bus, path, dialect) {
             Ok(result) => format!("{} rows exported to {path} ({})\n", result.entries, dialect),
             Err(error) => format!("error: {error}\n"),
         }
     } else {
-        match crate::modules::export::export_tric(data_bus, path, debug) {
+        match crate::modules::export::write_tric_archive(data_bus, path, debug) {
             Ok(result) => {
                 let mode = if debug { "uncompressed tar" } else { "Brotli" };
                 format!("{} entries exported to {path} ({mode})\n", result.entries)
@@ -432,11 +436,11 @@ fn format_export(mut parts: std::str::SplitWhitespace, data_bus: &Arc<dyn DataBu
     }
 }
 
-fn format_shutdown() -> String {
+fn render_shutdown() -> String {
     crate::modules::logger::log_info("shutdown requested via admin socket");
     std::process::exit(0);
 }
 
-fn format_help() -> String {
+fn render_help() -> String {
     "commands:\n  status                                server status\n  keys [-p prefix]                      list keys\n  inspect <key>                         key metadata\n  query <SQL>                           SQL query\n  import -f <path> -F mysql|postgres|sqlite [-a]\n  import -D <old.tric> <new.tric>       diff-import\n  export -f <path.tric> [-d] [-F mysql|postgres|sqlite]\n  dump -f <path>                        binary store dump\n  restore -f <path>                     binary store restore\n  reload                                reload authorized_keys\n  shutdown                              stop server\n  help                                  this message\n".to_string()
 }

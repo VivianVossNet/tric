@@ -51,7 +51,7 @@ fn analyse_create_table(
     columns: &[ColumnDef],
     constraints: &[TableConstraint],
 ) -> Option<TablePlan> {
-    let sanitised_name = sanitise_table_name(name);
+    let sanitised_name = parse_table_name_raw(name);
     if sanitised_name.is_empty() {
         return None;
     }
@@ -64,7 +64,7 @@ fn analyse_create_table(
         .iter()
         .map(|column| ColumnPlan {
             name: column.name.value.clone(),
-            data_type: format_data_type(&column.data_type),
+            data_type: render_data_type(&column.data_type),
             is_primary_key: primary_key_columns.contains(&column.name.value),
         })
         .collect();
@@ -146,18 +146,18 @@ fn find_ttl_candidate(columns: &[ColumnDef]) -> Option<String> {
     None
 }
 
-fn format_data_type(data_type: &DataType) -> String {
+fn render_data_type(data_type: &DataType) -> String {
     format!("{data_type}")
 }
 
-fn sanitise_table_name(name: &str) -> String {
+fn parse_table_name_raw(name: &str) -> String {
     name.replace(['`', '"'], "")
         .chars()
         .filter(|character| character.is_alphanumeric() || *character == '_')
         .collect()
 }
 
-pub fn format_schema_entry(table: &TablePlan) -> String {
+pub fn render_schema_entry(table: &TablePlan) -> String {
     let mut schema = String::new();
     for column in &table.columns {
         let mut line = format!("{}:{}", column.name, column.data_type);
@@ -183,7 +183,7 @@ pub fn format_schema_entry(table: &TablePlan) -> String {
     schema
 }
 
-pub fn format_storage_plan(plan: &StoragePlan) -> String {
+pub fn render_storage_plan(plan: &StoragePlan) -> String {
     let mut output = String::new();
     for table in &plan.tables {
         output.push_str(&format!(

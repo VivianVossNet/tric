@@ -115,9 +115,13 @@ impl DataBus for PermutiveBus {
         let transient_results = self.transient.find_by_prefix(prefix);
         let persistent_results = self.persistent.find_by_prefix(prefix);
 
+        let transient_keys: std::collections::HashSet<Bytes> = transient_results
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect();
         let mut merged = transient_results;
         for (key, value) in persistent_results {
-            if !merged.iter().any(|(existing_key, _)| existing_key == &key) {
+            if !transient_keys.contains(&key) {
                 merged.push((key, value));
             }
         }

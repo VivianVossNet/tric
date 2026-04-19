@@ -42,23 +42,27 @@ impl Module for ServerModule {
 
     fn run(&self, context: ModuleContext) {
         let _ = std::fs::remove_file(&self.config.local_path);
-        let local_socket = Arc::new(UnixDatagram::bind(&self.config.local_path).unwrap_or_else(
-            |error| {
-                panic!(
-                    "failed to bind local socket {}: {error}",
+        let local_socket = match UnixDatagram::bind(&self.config.local_path) {
+            Ok(socket) => Arc::new(socket),
+            Err(error) => {
+                eprintln!(
+                    "tric: cannot bind local socket {}: {error}",
                     self.config.local_path
-                )
-            },
-        ));
+                );
+                std::process::exit(1);
+            }
+        };
 
-        let udp_socket = Arc::new(
-            UdpSocket::bind(&self.config.udp_bind).unwrap_or_else(|error| {
-                panic!(
-                    "failed to bind UDP socket {}: {error}",
+        let udp_socket = match UdpSocket::bind(&self.config.udp_bind) {
+            Ok(socket) => Arc::new(socket),
+            Err(error) => {
+                eprintln!(
+                    "tric: cannot bind UDP socket {}: {error}",
                     self.config.udp_bind
-                )
-            }),
-        );
+                );
+                std::process::exit(1);
+            }
+        };
 
         let session_table = Arc::new(crate::modules::auth::create_session_table(
             self.config.max_sessions,

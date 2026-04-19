@@ -12,7 +12,7 @@ pub struct ExportResult {
     pub bytes_written: usize,
 }
 
-pub fn export_tric(
+pub fn write_tric_archive(
     data_bus: &Arc<dyn DataBus>,
     path: &str,
     debug_uncompressed: bool,
@@ -48,7 +48,7 @@ fn write_tar_contents<W: Write>(
     data_bus: &Arc<dyn DataBus>,
     result: &mut ExportResult,
 ) -> Result<(), String> {
-    append_entry(archive, "_meta/version", b"tric+1")?;
+    write_tar_entry(archive, "_meta/version", b"tric+1")?;
     result.entries += 1;
 
     let all_entries = data_bus.find_by_prefix(b"");
@@ -58,18 +58,18 @@ fn write_tar_contents<W: Write>(
 
         if let Some(table_name) = key_str.strip_prefix("_schema:") {
             let tar_path = format!("_schema/{table_name}");
-            append_entry(archive, &tar_path, value)?;
+            write_tar_entry(archive, &tar_path, value)?;
         } else if let Some(rel_name) = key_str.strip_prefix("_rel:") {
             let tar_path = format!("_rel/{rel_name}");
-            append_entry(archive, &tar_path, b"")?;
+            write_tar_entry(archive, &tar_path, b"")?;
         } else {
             let tar_path = key_str.replace(':', "/");
-            append_entry(archive, &tar_path, value)?;
+            write_tar_entry(archive, &tar_path, value)?;
 
             if let Some(ttl_remaining) = data_bus.read_ttl_remaining(key) {
                 let ttl_ms = ttl_remaining.as_millis().to_string();
                 let ttl_path = format!("_ttl/{}", key_str.replace(':', "/"));
-                append_entry(archive, &ttl_path, ttl_ms.as_bytes())?;
+                write_tar_entry(archive, &ttl_path, ttl_ms.as_bytes())?;
             }
         }
 
@@ -80,7 +80,7 @@ fn write_tar_contents<W: Write>(
     Ok(())
 }
 
-fn append_entry<W: Write>(
+fn write_tar_entry<W: Write>(
     archive: &mut tar::Builder<W>,
     path: &str,
     data: &[u8],
@@ -94,7 +94,7 @@ fn append_entry<W: Write>(
         .map_err(|error| format!("tar append {path} failed: {error}"))
 }
 
-pub fn export_sql(
+pub fn write_sql_file(
     data_bus: &Arc<dyn DataBus>,
     path: &str,
     dialect: &str,

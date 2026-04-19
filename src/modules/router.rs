@@ -28,7 +28,7 @@ pub fn dispatch_request(
         0x04 => vec![delete_value_if_match(request, data_bus)],
         0x05 => vec![write_ttl(request, data_bus)],
         0x06 => find_by_prefix(request, data_bus),
-        0x07 => dispatch_query(request, data_bus),
+        0x07 => parse_query_request(request, data_bus),
         0x13 => vec![create_ok(request.request_id)],
         0x14 => vec![read_status(request, metrics)],
         0x15 => vec![parse_shutdown(request)],
@@ -164,7 +164,7 @@ fn find_by_prefix(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Respons
     responses
 }
 
-fn dispatch_query(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Response> {
+fn parse_query_request(request: &Request, data_bus: &Arc<dyn DataBus>) -> Vec<Response> {
     let Some(sql_bytes) = read_field(&request.payload, 0) else {
         return vec![create_error(request.request_id, ERROR_MALFORMED)];
     };

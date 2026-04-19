@@ -9,7 +9,7 @@ use sqlparser::dialect::{GenericDialect, MySqlDialect, PostgreSqlDialect, SQLite
 use sqlparser::parser::Parser;
 
 use crate::core::data_bus::DataBus;
-use crate::modules::analyser::{format_schema_entry, StoragePlan, TablePlan};
+use crate::modules::analyser::{render_schema_entry, StoragePlan, TablePlan};
 
 pub fn parse_sql(content: &str, format: &str) -> Vec<Statement> {
     let dialect: Box<dyn sqlparser::dialect::Dialect> = match format {
@@ -21,7 +21,7 @@ pub fn parse_sql(content: &str, format: &str) -> Vec<Statement> {
     Parser::parse_sql(&*dialect, content).unwrap_or_default()
 }
 
-pub fn execute_import(
+pub fn parse_import(
     statements: &[Statement],
     plan: &StoragePlan,
     data_bus: &Arc<dyn DataBus>,
@@ -35,7 +35,7 @@ pub fn execute_import(
 
     for table in &plan.tables {
         let schema_key = format!("_schema:{}", table.name);
-        let schema_value = format_schema_entry(table);
+        let schema_value = render_schema_entry(table);
         data_bus.write_value(schema_key.as_bytes(), schema_value.as_bytes());
         result.tables += 1;
     }
@@ -79,7 +79,7 @@ fn write_row(table: &TablePlan, values: &[Expr], data_bus: &Arc<dyn DataBus>) ->
                 .columns
                 .iter()
                 .position(|column| column.name == *pk_name)?;
-            Some(extract_value(&values[index]))
+            Some(parse_value(&values[index]))
         })
         .collect();
 
@@ -94,7 +94,7 @@ fn write_row(table: &TablePlan, values: &[Expr], data_bus: &Arc<dyn DataBus>) ->
         if column.is_primary_key {
             continue;
         }
-        value_parts.push(extract_value(&values[index]));
+        value_parts.push(parse_value(&values[index]));
     }
     let value = value_parts.join("\n");
 
@@ -107,7 +107,7 @@ fn write_row(table: &TablePlan, values: &[Expr], data_bus: &Arc<dyn DataBus>) ->
             .iter()
             .position(|column| column.name == fk.column)
         {
-            let fk_value = extract_value(&values[fk_index]);
+            let fk_value = parse_value(&values[fk_index]);
             let rel_key = format!(
                 "_rel:{}:{}:{}:{}",
                 fk.references_table,
@@ -123,7 +123,7 @@ fn write_row(table: &TablePlan, values: &[Expr], data_bus: &Arc<dyn DataBus>) ->
     Ok(relationship_count)
 }
 
-fn extract_value(expression: &Expr) -> String {
+fn parse_value(expression: &Expr) -> String {
     match expression {
         Expr::Value(Value::Number(number, _)) => number.clone(),
         Expr::Value(Value::SingleQuotedString(text)) => text.clone(),
