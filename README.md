@@ -10,13 +10,18 @@ You could assemble this yourself: a `BTreeMap`, a `rusqlite` binding, a lazy TTL
 
 On FreeBSD, the canonical deployment target, TRIC+ is faster than Redis in both read and write quadrants of the server-to-server comparison. Waves 1 and 2 of the bridge programme are complete; Wave 3 covers enterprise languages (PHP, Java, Kotlin, Python, Ruby, C#, Go), and Wave 4 covers native-socket clients for the remaining ecosystems. The server is free for any single-host production use under the Business Source License, and every tagged version converts to Apache 2.0 four years after release. The reader who needed a KV store that was honest about persistence, fast on the platform they actually run, and legally clear now has one.
 
+**Wave 1** (FFI base):
 ![C](https://img.shields.io/badge/C-ready-4caf50?style=flat-square&logo=c)
+
+**Wave 2** (C FFI consumers):
 ![C++](https://img.shields.io/badge/C++-ready-4caf50?style=flat-square&logo=cplusplus)
 ![Swift](https://img.shields.io/badge/Swift-ready-4caf50?style=flat-square&logo=swift)
 ![Nim](https://img.shields.io/badge/Nim-ready-4caf50?style=flat-square&logo=nim)
 ![Lua](https://img.shields.io/badge/Lua-ready-4caf50?style=flat-square&logo=lua)
 ![Tcl](https://img.shields.io/badge/Tcl-ready-4caf50?style=flat-square)
 ![Zig](https://img.shields.io/badge/Zig-ready-4caf50?style=flat-square&logo=zig)
+
+**Wave 3** (native socket):
 ![PHP](https://img.shields.io/badge/PHP-planned-555555?style=flat-square&logo=php)
 ![Java](https://img.shields.io/badge/Java-planned-555555?style=flat-square&logo=openjdk)
 ![Kotlin](https://img.shields.io/badge/Kotlin-planned-555555?style=flat-square&logo=kotlin)
@@ -24,6 +29,8 @@ On FreeBSD, the canonical deployment target, TRIC+ is faster than Redis in both 
 ![Ruby](https://img.shields.io/badge/Ruby-planned-555555?style=flat-square&logo=ruby)
 ![C#](https://img.shields.io/badge/C%23-planned-555555?style=flat-square&logo=dotnet)
 ![Go](https://img.shields.io/badge/Go-planned-555555?style=flat-square&logo=go)
+
+**Wave 4** (native socket):
 ![JavaScript](https://img.shields.io/badge/JavaScript-planned-555555?style=flat-square&logo=javascript)
 ![TypeScript](https://img.shields.io/badge/TypeScript-planned-555555?style=flat-square&logo=typescript)
 ![Perl](https://img.shields.io/badge/Perl-planned-555555?style=flat-square&logo=perl)
