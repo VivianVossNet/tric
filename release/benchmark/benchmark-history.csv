@@ -16,3 +16,7 @@ timestamp,commit,platform,workload,median_ops_per_second,cv_percent,p50_ns,p99_n
 2026-04-19T17:00:00Z,dd1a910,freebsd-15-ryzen3600-zfs,permutive_mixed,32363,4.6,16280,56430
 2026-04-19T17:00:00Z,dd1a910,freebsd-15-ryzen3600-zfs,concurrent_write_4t,678258,0,0,0
 2026-04-19T17:00:00Z,dd1a910,freebsd-15-ryzen3600-zfs,concurrent_clients_4t,858653,0,0,0
+2026-04-19T19:00:00Z,4ad99e2,freebsd-15-ryzen3600-zfs,server_write_uds,67570,0.8,14450,22950
+2026-04-19T19:00:00Z,4ad99e2,freebsd-15-ryzen3600-zfs,server_read_uds,91675,1.3,10570,17540
+2026-04-19T19:00:00Z,4ad99e2,freebsd-15-ryzen3600-zfs,redis_write_tcp,65383,2.3,15170,16790
+2026-04-19T19:00:00Z,4ad99e2,freebsd-15-ryzen3600-zfs,redis_read_tcp,79129,7.1,12330,22110

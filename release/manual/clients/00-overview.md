@@ -118,7 +118,7 @@ The client must `recv()` in a loop until it receives `0x91`. Each `0x90` contain
 
 Every bridge undergoes the same quality gate as the TRIC+ core:
 
-- **Three-coder review:** Claudine (KISS/QS), Whitehat (Security), M45T3R42 (Efficiency)
+- **Five-coder review:** Claudine (KISS/QS), Whitehat (Security), M45T3R42 (Architectural creativity), Speedy Gonzales (Performance), Oldman (Product vision)
 - **Full Hafenrundfahrt** before merge
 - **Integration tests** against a running TRIC+ server
 - **Package manager distribution** (where applicable)

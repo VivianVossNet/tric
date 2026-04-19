@@ -56,15 +56,15 @@ This methodology is conservative. Pipelining and batching would increase through
 
 | Layer | Workload | ops/s | p50 | p99 |
 |-------|----------|------:|----:|----:|
-| 1 | Transient write 128B | 1,078,094 | 660ns | 4.53µs |
-| 1 | Transient read 128B | 1,650,737 | 450ns | 3.12µs |
-| 1 | Cache-promoted read | 2,241,860 | 360ns | 1.23µs |
-| 1 | SQLite write (WAL/ZFS) | 17,477 | 25.3µs | 78.2µs |
-| 1 | SQLite read (SQLite→cache) | 175,468 | 5.5µs | 10.3µs |
-| 2 | Server write 128B (UDS, `0x02` + duration) | 39,920 | 23.7µs | 45.5µs |
-| 2 | Server read 128B (UDS, `0x01`) | 105,590 | 8.6µs | 16.3µs |
-| 3 | Redis write 128B (TCP) | 55,207 | 16.5µs | 42.9µs |
-| 3 | Redis read 128B (TCP) | 96,276 | 10.2µs | 12.0µs |
+| 1 | Transient write 128B | 1,645,225 | 500ns | 1.47µs |
+| 1 | Transient read 128B | 2,199,671 | 370ns | 770ns |
+| 1 | Cache-promoted read | 2,737,603 | 320ns | 570ns |
+| 1 | SQLite write (WAL/ZFS) | 18,114 | 23.9µs | 68.1µs |
+| 1 | SQLite read (SQLite→cache) | 193,966 | 4.7µs | 8.6µs |
+| 2 | Server write 128B (UDS, `0x02` + duration) | 67,570 | 14.5µs | 22.9µs |
+| 2 | Server read 128B (UDS, `0x01`) | 91,675 | 10.6µs | 17.5µs |
+| 3 | Redis write 128B (TCP) | 65,383 | 15.2µs | 16.8µs |
+| 3 | Redis read 128B (TCP) | 79,129 | 12.3µs | 22.1µs |
 
 ## TRIC+-specific workloads
 
