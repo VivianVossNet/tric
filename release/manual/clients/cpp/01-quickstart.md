@@ -139,11 +139,15 @@ tric::connection b(std::move(a));
 
 ## Test
 
+Test source lives in `tests/bridge_test.cpp` and includes `tric.hpp` from the parent directory. Build and run (run from `bridges/cpp/`):
+
 ```bash
 cc  -Wall -Wextra -Wpedantic -std=c11   -O2 -c ../c/tric.c -o tric_c.o
-c++ -Wall -Wextra -Wpedantic -std=c++17 -O2 -I ../c -o check_bridge check_bridge.cpp tric_c.o
-./check_bridge /path/to/server.sock
+c++ -Wall -Wextra -Wpedantic -std=c++17 -O2 -I ../c -I . -o tests/bridge_test tests/bridge_test.cpp tric_c.o
+./tests/bridge_test /path/to/server.sock
 ```
+
+`-I ../c` finds `tric.h`; `-I .` finds `tric.hpp` (one directory up from the test source).
 
 The test binary exercises all six primitives plus move-construction semantics against a running TRIC+ server and reports pass/fail counts.
 

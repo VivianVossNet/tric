@@ -129,9 +129,11 @@ The bridge does not retry. The caller decides whether to reconnect and retry.
 
 ## Test
 
+Test source lives in `tests/bridge_test.c`. Build and run:
+
 ```bash
-cc -Wall -Wextra -Wpedantic -std=c11 -O2 -o check_bridge tric.c check_bridge.c
-./check_bridge /path/to/server.sock
+cc -Wall -Wextra -Wpedantic -std=c11 -O2 -o tests/bridge_test tric.c tests/bridge_test.c
+./tests/bridge_test /path/to/server.sock
 ```
 
 The test binary exercises all six primitives against a running TRIC+ server and reports pass/fail counts.
