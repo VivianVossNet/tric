@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Scope: Auth — ed25519 + X25519 handshake, session table, authorized_keys management.
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::RwLock;
 
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
@@ -92,7 +92,7 @@ pub fn derive_session_key(server_secret: EphemeralSecret, client_x25519_public: 
 
 impl SessionTable {
     pub fn create_session(&self, session_id: [u8; 16], label: String, key: Key) -> bool {
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write();
         if sessions.len() >= self.max_sessions {
             return false;
         }
@@ -109,7 +109,7 @@ impl SessionTable {
     }
 
     pub fn encrypt_response(&self, session_id: &[u8; 16], plaintext: &[u8]) -> Option<Vec<u8>> {
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write();
         let session = sessions.get_mut(session_id)?;
         session.nonce_counter += 1;
         let mut nonce_bytes = [0u8; 12];
@@ -124,19 +124,19 @@ impl SessionTable {
         ciphertext: &[u8],
         nonce_bytes: &[u8; 12],
     ) -> Option<Vec<u8>> {
-        let sessions = self.sessions.read().unwrap();
+        let sessions = self.sessions.read();
         let session = sessions.get(session_id)?;
         let nonce = Nonce::from_slice(nonce_bytes);
         session.cipher.decrypt(nonce, ciphertext).ok()
     }
 
     pub fn remove_session(&self, session_id: &[u8; 16]) {
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write();
         sessions.remove(session_id);
     }
 
     pub fn read_session_count(&self) -> usize {
-        self.sessions.read().unwrap().len()
+        self.sessions.read().len()
     }
 }
 

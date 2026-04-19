@@ -25,5 +25,6 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 sqlparser = "0.52"
 tar = "0.4"
 brotli = "7"
+parking_lot = "0.12"
 rusqlite = { version = "0.31", features = ["bundled"] }
 redis = "0.27"
