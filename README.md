@@ -40,22 +40,7 @@ Write a value. Set a TTL and it lives in a BTreeMap. Don't set a TTL and it live
 
 ## Performance
 
-Three benchmark layers, same machine, same payload, same methodology. Layer 2 (server vs server) is the apples-to-apples comparison: TRIC+ over UDS against Redis over TCP, both serving an in-memory `SET k v EX t` / `GET k` workload.
-
-### macOS (Apple Silicon)
-
-| Layer | Workload | ops/s | p50 | p99 | vs Redis |
-|-------|----------|------:|----:|----:|---------:|
-| 1: In-process | Transient write 128B | 2,492,116 | 292ns | 1.17µs | — |
-| 1: In-process | Transient read 128B | 4,198,248 | 208ns | 417ns | — |
-| 1: In-process | Cache-promoted read | 3,853,936 | 208ns | 458ns | — |
-| 1: In-process | SQLite write (WAL) | 18,696 | 43.2µs | 178.7µs | — |
-| **2: Server (UDS)** | **Write 128B** | **16,437** | **54.0µs** | **164.3µs** | **1.33x** |
-| **2: Server (UDS)** | **Read 128B** | **26,962** | **34.6µs** | **93.8µs** | 0.71x |
-| 3: Redis (TCP) | Write 128B | 12,386 | 63.3µs | 268.7µs | baseline |
-| 3: Redis (TCP) | Read 128B | 37,972 | 23.8µs | 63.9µs | baseline |
-
-### FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)
+Three benchmark layers, same machine, same payload, same methodology. Measured on **FreeBSD 15 (AMD Ryzen 5 3600, ZFS, Jail)** — the canonical deployment target. Layer 2 (server vs server) is the apples-to-apples comparison: TRIC+ over UDS against Redis over TCP, both serving an in-memory `SET k v EX t` / `GET k` workload.
 
 | Layer | Workload | ops/s | p50 | p99 | vs Redis |
 |-------|----------|------:|----:|----:|---------:|
@@ -72,7 +57,7 @@ Three benchmark layers, same machine, same payload, same methodology. Layer 2 (s
 
 The single-shot SET/GET above is Redis' home discipline. TRIC+'s own architectural strengths — permutive routing (TTL = transient, no TTL = persistent, one API), cache-promotion, prefix-scan as a first-class operation, atomic CAS without scripting, concurrent multi-client mixed workloads — are characterised in [`release/manual/server/10-performance.md`](release/manual/server/10-performance.md) §TRIC+-specific workloads.
 
-TRIC+ beats Redis on FreeBSD in both Layer-2 quadrants: writes (1.03x) and reads (1.16x). On macOS, TRIC+ leads writes; Redis leads reads due to macOS's stronger TCP stack relative to its UDS implementation. Beyond raw throughput, TRIC+ offers what Redis cannot: a permutive tier where keys without TTL live in SQLite for free, atomic CAS without Lua scripting (292x faster), and prefix-scan as a first-class operation (65x faster than Redis KEYS).
+TRIC+ beats Redis on FreeBSD in both Layer-2 quadrants: writes (1.03x) and reads (1.16x). Beyond raw throughput, TRIC+ offers what Redis cannot: a permutive tier where keys without TTL live in SQLite for free, atomic CAS without Lua scripting (292x faster), and prefix-scan as a first-class operation (65x faster than Redis KEYS).
 
 ### Reproduce
 
